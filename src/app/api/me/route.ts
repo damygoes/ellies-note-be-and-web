@@ -135,6 +135,8 @@ export async function DELETE() {
 
     return NextResponse.json({ success: true });
   } catch (err: any) {
+    console.error("[api/me DELETE] ERROR:", err);
+    console.error("[api/me DELETE] STACK:", err?.stack);
     if (err?.message === "UNAUTHORIZED") return jsonError(401, "Unauthorized");
     return jsonError(500, "Internal server error");
   }
