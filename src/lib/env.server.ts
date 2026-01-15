@@ -12,7 +12,6 @@ const serverEnvSchema = z.object({
   DATABASE_NAME: z.string().min(1),
 
   CLERK_WEBHOOK_SECRET: z.string().min(1),
-  CLERK_PUBLISHABLE_KEY: z.string().min(1),
 });
 
 export const serverEnv = serverEnvSchema.parse(process.env);
