@@ -1,4 +1,4 @@
-import { clerkClient } from "@clerk/nextjs/server";
+import { auth, clerkClient } from "@clerk/nextjs/server";
 import { eq } from "drizzle-orm";
 import { NextResponse } from "next/server";
 
@@ -30,15 +30,38 @@ async function getAppUserByClerkId(clerkUserId: string) {
 
 export async function GET() {
   try {
-    const clerkUserId = await requireClerkUserId();
-    const user = await getAppUserByClerkId(clerkUserId);
+    const { userId } = await auth();
+    console.log("[api/me] userId:", userId);
 
-    if (!user) return jsonError(404, "User not found");
+    if (!userId) {
+      return NextResponse.json(
+        { success: false, message: "Unauthorized" },
+        { status: 401 }
+      );
+    }
 
-    return NextResponse.json({ success: true, data: user });
-  } catch (err: any) {
-    if (err?.message === "UNAUTHORIZED") return jsonError(401, "Unauthorized");
-    return jsonError(500, "Internal server error");
+    const row = await db
+      .select()
+      .from(users)
+      .where(eq(users.clerkUserId, userId))
+      .limit(1);
+
+    console.log("[api/me] db row found:", Boolean(row[0]));
+
+    if (!row[0]) {
+      return NextResponse.json(
+        { success: false, message: "User not found" },
+        { status: 404 }
+      );
+    }
+
+    return NextResponse.json({ success: true, data: row[0] });
+  } catch (err) {
+    console.error("[api/me] ERROR:", err);
+    return NextResponse.json(
+      { success: false, message: "Internal server error" },
+      { status: 500 }
+    );
   }
 }
 
