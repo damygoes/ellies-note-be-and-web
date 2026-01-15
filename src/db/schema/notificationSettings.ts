@@ -11,7 +11,6 @@ export const notificationSettings = pgTable("notification_settings", {
   enabled: boolean("enabled").notNull().default(true),
   sound: boolean("sound").notNull().default(true),
   vibration: boolean("vibration").notNull().default(true),
-  checkInReminders: boolean("check_in_reminders").notNull().default(true),
   insightsDigest: boolean("insights_digest").notNull().default(true),
 
   // schedule stored as jsonb for flexibility:
