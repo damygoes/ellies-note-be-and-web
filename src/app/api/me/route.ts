@@ -31,7 +31,6 @@ async function getAppUserByClerkId(clerkUserId: string) {
 export async function GET() {
   try {
     const { userId } = await auth();
-    console.log("[api/me] userId:", userId);
 
     if (!userId) {
       return NextResponse.json(
@@ -45,8 +44,6 @@ export async function GET() {
       .from(users)
       .where(eq(users.clerkUserId, userId))
       .limit(1);
-
-    console.log("[api/me] db row found:", Boolean(row[0]));
 
     if (!row[0]) {
       return NextResponse.json(
