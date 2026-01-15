@@ -35,7 +35,6 @@ export async function POST(req: Request) {
     return NextResponse.json({ error: "Invalid signature" }, { status: 400 });
   }
 
-  // Handle the event(s) you care about
   if (evt.type === "user.created") {
     const data: any = evt.data;
 
@@ -63,6 +62,16 @@ export async function POST(req: Request) {
       .limit(1);
 
     return NextResponse.json({ ok: true, user: row });
+  }
+
+  if (evt.type === "user.deleted") {
+    const data: any = evt.data;
+    const clerkUserId: string = data.id;
+
+    // Delete app user row by clerkUserId
+    await db.delete(users).where(eq(users.clerkUserId, clerkUserId));
+
+    return NextResponse.json({ ok: true });
   }
 
   return NextResponse.json({ ok: true });

@@ -1,0 +1,121 @@
+import { clerkClient } from "@clerk/nextjs/server";
+import { eq } from "drizzle-orm";
+import { NextResponse } from "next/server";
+
+import { db } from "@/db";
+import { notificationSettings } from "@/db/schema/notificationSettings";
+import { users } from "@/db/schema/user";
+import { requireClerkUserId } from "@/lib/serverAuth";
+
+type UpdateMeBody = Partial<{
+  firstName: string;
+  lastName: string;
+  username: string;
+  image: string;
+}>;
+
+function jsonError(status: number, message: string) {
+  return NextResponse.json({ success: false, message }, { status });
+}
+
+async function getAppUserByClerkId(clerkUserId: string) {
+  const row = await db
+    .select()
+    .from(users)
+    .where(eq(users.clerkUserId, clerkUserId))
+    .limit(1);
+
+  return row[0] ?? null;
+}
+
+export async function GET() {
+  try {
+    const clerkUserId = await requireClerkUserId();
+    const user = await getAppUserByClerkId(clerkUserId);
+
+    if (!user) return jsonError(404, "User not found");
+
+    return NextResponse.json({ success: true, data: user });
+  } catch (err: any) {
+    if (err?.message === "UNAUTHORIZED") return jsonError(401, "Unauthorized");
+    return jsonError(500, "Internal server error");
+  }
+}
+
+export async function PATCH(req: Request) {
+  try {
+    const clerkUserId = await requireClerkUserId();
+    const user = await getAppUserByClerkId(clerkUserId);
+    if (!user) return jsonError(404, "User not found");
+
+    const body = (await req.json()) as UpdateMeBody;
+
+    // Allowlist fields (prevents accidental writes)
+    const updates: UpdateMeBody = {};
+    if (typeof body.firstName === "string")
+      updates.firstName = body.firstName.trim();
+    if (typeof body.lastName === "string")
+      updates.lastName = body.lastName.trim();
+    if (typeof body.username === "string")
+      updates.username = body.username.trim();
+    if (typeof body.image === "string") updates.image = body.image.trim();
+
+    if (Object.keys(updates).length === 0) {
+      return jsonError(400, "No valid fields to update");
+    }
+
+    const updatedRows = await db
+      .update(users)
+      .set({
+        ...updates,
+        updatedAt: new Date(),
+      })
+      .where(eq(users.id, user.id))
+      .returning();
+
+    return NextResponse.json({ success: true, data: updatedRows[0] });
+  } catch (err: any) {
+    if (err?.message === "UNAUTHORIZED") return jsonError(401, "Unauthorized");
+    return jsonError(500, "Internal server error");
+  }
+}
+
+export async function DELETE() {
+  /**
+   * Deletes the account in BOTH places:
+   * 1) App DB (user + related rows via cascade)
+   * 2) Clerk user (identity)
+   *
+   * Recommended sequencing:
+   * - delete app data first (so your system is clean even if Clerk deletion is delayed)
+   * - then delete Clerk user
+   */
+  try {
+    const clerkUserId = await requireClerkUserId();
+    const user = await getAppUserByClerkId(clerkUserId);
+    if (!user) return jsonError(404, "User not found");
+
+    // DB deletion: if your schema uses ON DELETE CASCADE (recommended),
+    // deleting from users will remove notification_settings, checkins, etc.
+    await db.transaction(async (tx) => {
+      // If you don't have cascade, delete dependents explicitly:
+      await tx
+        .delete(notificationSettings)
+        .where(eq(notificationSettings.userId, user.id));
+
+      // TODO: delete check-ins table rows when you add that table:
+      // await tx.delete(checkIns).where(eq(checkIns.userId, user.id));
+
+      await tx.delete(users).where(eq(users.id, user.id));
+    });
+
+    // Clerk deletion
+    const client = await clerkClient();
+    await client.users.deleteUser(clerkUserId);
+
+    return NextResponse.json({ success: true });
+  } catch (err: any) {
+    if (err?.message === "UNAUTHORIZED") return jsonError(401, "Unauthorized");
+    return jsonError(500, "Internal server error");
+  }
+}
