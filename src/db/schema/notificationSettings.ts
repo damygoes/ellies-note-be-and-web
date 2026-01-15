@@ -9,18 +9,25 @@ export const notificationSettings = pgTable("notification_settings", {
     .unique(),
 
   enabled: boolean("enabled").notNull().default(true),
-  sound: boolean("sound").notNull().default(true),
-  vibration: boolean("vibration").notNull().default(true),
-  insightsDigest: boolean("insights_digest").notNull().default(true),
 
-  // schedule stored as jsonb for flexibility:
-  schedule: jsonb("schedule")
+  // JSONB allows future expansion without migrations every time
+  settings: jsonb("settings")
     .$type<{
-      frequency: "twice_daily" | "custom";
-      customTimes?: { hour: number; minute: number }[];
+      checkIns: {
+        schedule: {
+          frequency: "twice_daily" | "custom";
+          times: { hour: number; minute: number }[];
+        };
+      };
+      delivery: { sound: boolean; vibration: boolean };
+      digest: { enabled: boolean; cadence: "weekly" };
     }>()
     .notNull(),
 
-  createdAt: timestamp("created_at").defaultNow().notNull(),
-  updatedAt: timestamp("updated_at").defaultNow().notNull(),
+  createdAt: timestamp("created_at", { withTimezone: true })
+    .notNull()
+    .defaultNow(),
+  updatedAt: timestamp("updated_at", { withTimezone: true })
+    .notNull()
+    .defaultNow(),
 });
