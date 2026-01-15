@@ -3,7 +3,6 @@ import { eq } from "drizzle-orm";
 import { NextResponse } from "next/server";
 
 import { db } from "@/db";
-import { notificationSettings } from "@/db/schema/notificationSettings";
 import { users } from "@/db/schema/user";
 import { requireClerkUserId } from "@/lib/serverAuth";
 
@@ -101,42 +100,21 @@ export async function PATCH(req: Request) {
 }
 
 export async function DELETE() {
-  /**
-   * Deletes the account in BOTH places:
-   * 1) App DB (user + related rows via cascade)
-   * 2) Clerk user (identity)
-   *
-   * Recommended sequencing:
-   * - delete app data first (so your system is clean even if Clerk deletion is delayed)
-   * - then delete Clerk user
-   */
   try {
     const clerkUserId = await requireClerkUserId();
     const user = await getAppUserByClerkId(clerkUserId);
     if (!user) return jsonError(404, "User not found");
 
-    // DB deletion: if your schema uses ON DELETE CASCADE (recommended),
-    // deleting from users will remove notification_settings, checkins, etc.
-    await db.transaction(async (tx) => {
-      // If you don't have cascade, delete dependents explicitly:
-      await tx
-        .delete(notificationSettings)
-        .where(eq(notificationSettings.userId, user.id));
+    // Single delete – cascades to notification_settings
+    await db.delete(users).where(eq(users.id, user.id));
 
-      // TODO: delete check-ins table rows when you add that table:
-      // await tx.delete(checkIns).where(eq(checkIns.userId, user.id));
-
-      await tx.delete(users).where(eq(users.id, user.id));
-    });
-
-    // Clerk deletion
+    // Clerk deletion (admin API)
     const client = await clerkClient();
     await client.users.deleteUser(clerkUserId);
 
-    return NextResponse.json({ success: true });
+    return NextResponse.json({ success: true, data: null });
   } catch (err: any) {
     console.error("[api/me DELETE] ERROR:", err);
-    console.error("[api/me DELETE] STACK:", err?.stack);
     if (err?.message === "UNAUTHORIZED") return jsonError(401, "Unauthorized");
     return jsonError(500, "Internal server error");
   }
