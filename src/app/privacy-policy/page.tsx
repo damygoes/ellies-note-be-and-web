@@ -1,16 +1,18 @@
+import { AppConstants } from "@/lib/constants";
+
 export const metadata = {
   title: "Privacy Policy • Checkly",
   description:
     "Checkly Privacy Policy describing how we collect, use, and protect information.",
 };
 
-const APP_NAME = "Checkly";
-
-const EFFECTIVE_DATE = "January 15, 2026";
-const CONTACT_EMAIL = "privacy@checkly.app";
-const DEVELOPER_NAME = "Damilola Bada";
-
 export default function PrivacyPolicyPage() {
+  const {
+    APP_NAME,
+    EFFECTIVE_DATE,
+    SUPPORT_EMAIL: CONTACT_EMAIL,
+    DEVELOPER_NAME,
+  } = AppConstants;
   return (
     <main style={styles.page}>
       <article style={styles.card}>
