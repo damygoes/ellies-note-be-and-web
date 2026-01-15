@@ -1,0 +1,69 @@
+import { db } from "@/db";
+import { users } from "@/db/schema/user";
+import type { WebhookEvent } from "@clerk/backend"; // optional typing; you can also define your own
+import { eq } from "drizzle-orm";
+import { headers } from "next/headers";
+import { NextResponse } from "next/server";
+import { Webhook } from "svix";
+
+export async function POST(req: Request) {
+  const secret = process.env.CLERK_WEBHOOK_SECRET;
+  if (!secret)
+    return NextResponse.json(
+      { error: "Missing CLERK_WEBHOOK_SECRET" },
+      { status: 500 }
+    );
+
+  // IMPORTANT: use raw body text for signature verification
+  const payload = await req.text();
+
+  const h = await headers();
+  const svixId = h.get("svix-id") ?? "";
+  const svixTimestamp = h.get("svix-timestamp") ?? "";
+  const svixSignature = h.get("svix-signature") ?? "";
+
+  let evt: WebhookEvent;
+
+  try {
+    const wh = new Webhook(secret);
+    evt = wh.verify(payload, {
+      "svix-id": svixId,
+      "svix-timestamp": svixTimestamp,
+      "svix-signature": svixSignature,
+    }) as WebhookEvent;
+  } catch (err) {
+    return NextResponse.json({ error: "Invalid signature" }, { status: 400 });
+  }
+
+  // Handle the event(s) you care about
+  if (evt.type === "user.created") {
+    const data: any = evt.data;
+
+    const clerkUserId: string = data.id;
+    const email: string | undefined = data.email_addresses?.[0]?.email_address;
+    const firstName: string | undefined = data.first_name ?? undefined;
+    const lastName: string | undefined = data.last_name ?? undefined;
+    const image: string | undefined = data.profile_image_url ?? undefined;
+
+    await db
+      .insert(users)
+      .values({
+        clerkUserId,
+        email,
+        firstName,
+        lastName,
+        image,
+      })
+      .onConflictDoNothing({ target: users.clerkUserId });
+
+    const [row] = await db
+      .select()
+      .from(users)
+      .where(eq(users.clerkUserId, clerkUserId))
+      .limit(1);
+
+    return NextResponse.json({ ok: true, user: row });
+  }
+
+  return NextResponse.json({ ok: true });
+}
