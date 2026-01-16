@@ -1,13 +1,16 @@
-import { pgTable, text, timestamp, uuid } from "drizzle-orm/pg-core";
+import { pgTable, text, timestamp, uuid } from 'drizzle-orm/pg-core';
 
-export const users = pgTable("users", {
-  id: uuid("id").defaultRandom().primaryKey(),
-  clerkUserId: text("clerk_user_id").notNull().unique(),
-  email: text("email"),
-  firstName: text("first_name"),
-  lastName: text("last_name"),
-  username: text("username").unique(),
-  image: text("image"),
-  createdAt: timestamp("created_at").defaultNow().notNull(),
-  updatedAt: timestamp("updated_at").defaultNow().notNull(),
+export const users = pgTable('users', {
+  id: uuid('id').defaultRandom().primaryKey(),
+  clerkUserId: text('clerk_user_id').notNull().unique(),
+  email: text('email'),
+  firstName: text('first_name'),
+  lastName: text('last_name'),
+  username: text('username').unique(),
+  image: text('image'),
+
+  timezone: text('timezone'), // <-- ADD (IANA timezone)
+
+  createdAt: timestamp('created_at').defaultNow().notNull(),
+  updatedAt: timestamp('updated_at').defaultNow().notNull(),
 });

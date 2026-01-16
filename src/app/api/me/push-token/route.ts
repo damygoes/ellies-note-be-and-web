@@ -3,6 +3,7 @@ import { NextResponse } from 'next/server';
 
 import { db } from '@/db';
 import { pushTokens } from '@/db/schema/pushTokens';
+import { users } from '@/db/schema/user';
 import { requireClerkUserId } from '@/lib/serverAuth';
 import { getAppUserByClerkId } from '@/utils/getAppUserIdByClerkId';
 import { jsonError } from '@/utils/jsonError';
@@ -12,7 +13,19 @@ type Body = {
   expoPushToken: string;
   platform?: string;
   deviceId?: string;
+  timezone?: string; // IANA timezone, e.g. "Europe/Berlin"
 };
+
+function isLikelyExpoPushToken(token: string) {
+  // Expo tokens typically look like:
+  // ExponentPushToken[xxxxxxxxxxxxxxxxxxxxxx]
+  // ExpoPushToken[xxxxxxxxxxxxxxxxxxxxxx]
+  return (
+    token.startsWith('ExponentPushToken[') ||
+    token.startsWith('ExpoPushToken[') ||
+    token.includes('PushToken[')
+  );
+}
 
 export async function POST(req: Request) {
   try {
@@ -26,19 +39,69 @@ export async function POST(req: Request) {
       expoPushToken: { kind: 'string', sanitize: (s) => s.trim() },
       platform: { kind: 'string', optional: true, sanitize: (s) => s.trim() },
       deviceId: { kind: 'string', optional: true, sanitize: (s) => s.trim() },
+      timezone: { kind: 'string', optional: true, sanitize: (s) => s.trim() },
     } as const);
 
     if (!parsed.ok) return jsonError(400, parsed.message);
 
-    const { expoPushToken, platform, deviceId } = parsed.data;
+    const { expoPushToken, platform, deviceId, timezone } = parsed.data;
 
-    // Minimal validation: Expo tokens start with "ExponentPushToken[" or "ExpoPushToken["
-    if (!expoPushToken.includes('PushToken')) {
+    if (!isLikelyExpoPushToken(expoPushToken)) {
       return jsonError(400, 'Invalid Expo push token');
     }
 
-    // Upsert by (userId + expoPushToken) OR by (userId + deviceId) if you prefer
-    const existing = await db
+    // Update user's timezone (if provided)
+    if (timezone && timezone.length > 0) {
+      await db
+        .update(users)
+        .set({ timezone, updatedAt: new Date() })
+        .where(eq(users.id, user.id));
+    }
+
+    // Prefer upsert by deviceId (most stable on mobile)
+    if (deviceId) {
+      const existingByDevice = await db
+        .select()
+        .from(pushTokens)
+        .where(
+          and(eq(pushTokens.userId, user.id), eq(pushTokens.deviceId, deviceId))
+        )
+        .limit(1);
+
+      if (existingByDevice[0]) {
+        const updated = await db
+          .update(pushTokens)
+          .set({
+            expoPushToken, // refresh token for this device
+            platform: platform ?? existingByDevice[0].platform,
+            updatedAt: new Date(),
+          })
+          .where(eq(pushTokens.id, existingByDevice[0].id))
+          .returning();
+
+        return NextResponse.json({ success: true, data: updated[0] });
+      }
+
+      // No row for this device yet -> insert
+      const inserted = await db
+        .insert(pushTokens)
+        .values({
+          userId: user.id,
+          expoPushToken,
+          platform: platform ?? null,
+          deviceId,
+          updatedAt: new Date(),
+        })
+        .returning();
+
+      return NextResponse.json(
+        { success: true, data: inserted[0] },
+        { status: 201 }
+      );
+    }
+
+    // Fallback: upsert by (userId, expoPushToken)
+    const existingByToken = await db
       .select()
       .from(pushTokens)
       .where(
@@ -49,15 +112,15 @@ export async function POST(req: Request) {
       )
       .limit(1);
 
-    if (existing[0]) {
+    if (existingByToken[0]) {
       const updated = await db
         .update(pushTokens)
         .set({
-          platform: platform ?? existing[0].platform,
-          deviceId: deviceId ?? existing[0].deviceId,
+          platform: platform ?? existingByToken[0].platform,
+          deviceId: deviceId ?? existingByToken[0].deviceId,
           updatedAt: new Date(),
         })
-        .where(eq(pushTokens.id, existing[0].id))
+        .where(eq(pushTokens.id, existingByToken[0].id))
         .returning();
 
       return NextResponse.json({ success: true, data: updated[0] });
@@ -70,7 +133,6 @@ export async function POST(req: Request) {
         expoPushToken,
         platform: platform ?? null,
         deviceId: deviceId ?? null,
-        createdAt: new Date(),
         updatedAt: new Date(),
       })
       .returning();
@@ -81,8 +143,9 @@ export async function POST(req: Request) {
     );
   } catch (err: unknown) {
     console.error('[api/me/push-token POST] ERROR:', err);
-    if (err instanceof Error && err.message === 'UNAUTHORIZED')
+    if (err instanceof Error && err.message === 'UNAUTHORIZED') {
       return jsonError(401, 'Unauthorized');
+    }
     return jsonError(500, 'Internal server error');
   }
 }
