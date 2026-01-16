@@ -5,6 +5,9 @@ import { NextResponse } from "next/server";
 import { db } from "@/db";
 import { users } from "@/db/schema/user";
 import { requireClerkUserId } from "@/lib/serverAuth";
+import { getAppUserByClerkId } from "@/utils/getAppUserIdByClerkId";
+import { jsonError } from "@/utils/jsonError";
+import { allowlistAndSanitize } from "@/utils/validateRequestBody";
 
 type UpdateMeBody = Partial<{
   firstName: string;
@@ -12,20 +15,6 @@ type UpdateMeBody = Partial<{
   username: string;
   image: string;
 }>;
-
-function jsonError(status: number, message: string) {
-  return NextResponse.json({ success: false, message }, { status });
-}
-
-async function getAppUserByClerkId(clerkUserId: string) {
-  const row = await db
-    .select()
-    .from(users)
-    .where(eq(users.clerkUserId, clerkUserId))
-    .limit(1);
-
-  return row[0] ?? null;
-}
 
 export async function GET() {
   try {
@@ -69,19 +58,16 @@ export async function PATCH(req: Request) {
 
     const body = (await req.json()) as UpdateMeBody;
 
-    // Allowlist fields (prevents accidental writes)
-    const updates: UpdateMeBody = {};
-    if (typeof body.firstName === "string")
-      updates.firstName = body.firstName.trim();
-    if (typeof body.lastName === "string")
-      updates.lastName = body.lastName.trim();
-    if (typeof body.username === "string")
-      updates.username = body.username.trim();
-    if (typeof body.image === "string") updates.image = body.image.trim();
+    const parsed = allowlistAndSanitize(body, {
+      firstName: { kind: "string", sanitize: (input) => input.trim() },
+      lastName: { kind: "string", sanitize: (input) => input.trim() },
+      username: { kind: "string", sanitize: (input) => input.trim() },
+      image: { kind: "string", sanitize: (input) => input.trim() },
+    } as const);
 
-    if (Object.keys(updates).length === 0) {
-      return jsonError(400, "No valid fields to update");
-    }
+    if (!parsed.ok) return jsonError(400, parsed.message);
+
+    const updates = parsed.data;
 
     const updatedRows = await db
       .update(users)

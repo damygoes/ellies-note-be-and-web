@@ -9,17 +9,18 @@ import {
   mergeSettings,
 } from "@/features/notifications/utils";
 import { requireClerkUserId } from "@/lib/serverAuth";
-import { getAppUserIdByClerkId } from "@/utils/getAppUserIdByClerkId";
+import { getAppUserByClerkId } from "@/utils/getAppUserIdByClerkId";
+import { jsonError } from "@/utils/jsonError";
 import { eq } from "drizzle-orm";
 import { NextResponse } from "next/server";
 
 export async function GET() {
   try {
     const clerkUserId = await requireClerkUserId();
-    const userId = await getAppUserIdByClerkId(clerkUserId);
-    if (!userId) return jsonError(404, "User not found");
+    const user = await getAppUserByClerkId(clerkUserId);
+    if (!user) return jsonError(404, "User not found");
 
-    const row = await getOrCreateSettingsRow(userId);
+    const row = await getOrCreateSettingsRow(user.id);
 
     // row.settings is stored as JSONB, return it as the API shape
     return NextResponse.json({ success: true, data: row.settings });
@@ -32,10 +33,10 @@ export async function GET() {
 export async function PUT(req: Request) {
   try {
     const clerkUserId = await requireClerkUserId();
-    const userId = await getAppUserIdByClerkId(clerkUserId);
-    if (!userId) return jsonError(404, "User not found");
+    const user = await getAppUserByClerkId(clerkUserId);
+    if (!user) return jsonError(404, "User not found");
 
-    const row = await getOrCreateSettingsRow(userId);
+    const row = await getOrCreateSettingsRow(user.id);
 
     const body = (await req.json()) as UpdateNotificationSettings;
 
@@ -58,7 +59,7 @@ export async function PUT(req: Request) {
         settings: next,
         updatedAt: new Date(),
       })
-      .where(eq(notificationSettings.userId, userId))
+      .where(eq(notificationSettings.userId, user.id))
       .returning();
 
     return NextResponse.json({ success: true, data: updated[0].settings });
@@ -66,8 +67,4 @@ export async function PUT(req: Request) {
     if (err?.message === "UNAUTHORIZED") return jsonError(401, "Unauthorized");
     return jsonError(500, "Internal server error");
   }
-}
-
-function jsonError(status: number, message: string) {
-  return NextResponse.json({ success: false, message }, { status });
 }
