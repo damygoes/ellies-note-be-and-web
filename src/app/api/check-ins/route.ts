@@ -96,8 +96,8 @@ export async function POST(req: Request) {
 
     if (!isIntegerInRange(energyLevel, 1, 10))
       return jsonError(400, "energyLevel must be an integer between 1 and 10");
-    if (!isIntegerInRange(painLevel, 1, 10))
-      return jsonError(400, "painLevel must be an integer between 1 and 10");
+    if (!isIntegerInRange(painLevel, 0, 10))
+      return jsonError(400, "painLevel must be an integer between 0 and 10");
 
     const tags = (influencedBy ?? [])
       .map((tag) => String(tag).trim())
