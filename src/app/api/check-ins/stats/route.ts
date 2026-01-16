@@ -12,9 +12,8 @@ import { jsonError } from "@/utils/jsonError";
 import { parseIntParam } from "@/utils/parseIntParam";
 
 type Bucket = "day" | "week" | "month";
-
-function parseBucket(value: string | null): Bucket {
-  if (value === "week" || value === "month" || value === "day") return value;
+function parseBucket(v: string | null): Bucket {
+  if (v === "week" || v === "month" || v === "day") return v;
   return "day";
 }
 
@@ -29,32 +28,32 @@ export async function GET(req: Request) {
       url.searchParams.get("tzOffsetMinutes"),
       0
     );
-    const tzParam = sql.param(tzOffsetMinutes);
-
-    const shifted = sql`(${checkInEntries.createdAt} - (${tzParam} * interval '1 minute'))`;
-
-    // bucket=day
-    const bucketExpr = sql`date_trunc('day', ${shifted})`;
+    const bucket = parseBucket(url.searchParams.get("bucket"));
 
     const rangeDaysRaw = parseIntParam(url.searchParams.get("range"), 7);
     const rangeDays = Math.min(365, Math.max(1, rangeDaysRaw));
 
-    const bucket = parseBucket(url.searchParams.get("bucket"));
-
     const now = new Date();
-    const endUtc = addDaysUtc(startOfLocalDay(now, tzOffsetMinutes), 1); // tomorrow local start (UTC)
-    const startUtc = addDaysUtc(endUtc, -rangeDays); // rangeDays back
+    const endUtc = addDaysUtc(startOfLocalDay(now, tzOffsetMinutes), 1);
+    const startUtc = addDaysUtc(endUtc, -rangeDays);
 
-    // Shift timestamps into "local time" for grouping, using tzOffsetMinutes.
-    // localTs = createdAt - tzOffsetMinutes minutes
-    const localTs = sql`(${checkInEntries.createdAt} - (${tzOffsetMinutes} * interval '1 minute'))`;
+    // Put the timezone offset in ONE place (subquery)
+    const tzParam = sql.param(tzOffsetMinutes);
+    const shifted = sql`(${checkInEntries.createdAt} - (${tzParam} * interval '1 minute'))`;
 
-    const rows = await db
+    const bucketExpr =
+      bucket === "month"
+        ? sql`date_trunc('month', ${shifted})`
+        : bucket === "week"
+        ? sql`date_trunc('week', ${shifted})`
+        : sql`date_trunc('day', ${shifted})`;
+
+    // Compute bucketStart once, then GROUP BY the column
+    const base = db
       .select({
         bucketStart: bucketExpr,
-        count: sql<number>`count(*)`,
-        energyAvg: sql<number | null>`avg(${checkInEntries.energyLevel})`,
-        painAvg: sql<number | null>`avg(${checkInEntries.painLevel})`,
+        energyLevel: checkInEntries.energyLevel,
+        painLevel: checkInEntries.painLevel,
       })
       .from(checkInEntries)
       .where(
@@ -64,15 +63,19 @@ export async function GET(req: Request) {
           lt(checkInEntries.createdAt, endUtc)
         )
       )
-      .groupBy(bucketExpr)
-      .orderBy(bucketExpr);
+      .as("base");
 
-    /**
-     * Output format:
-     * - bucketStart is returned as ISO.
-     * - NOTE: bucketStart is a "local-frame" timestamp produced by shifting createdAt and truncating.
-     *   That’s fine for display buckets; the client can label as needed.
-     */
+    const rows = await db
+      .select({
+        bucketStart: base.bucketStart,
+        count: sql<number>`count(*)`,
+        energyAvg: sql<number | null>`avg(${base.energyLevel})`,
+        painAvg: sql<number | null>`avg(${base.painLevel})`,
+      })
+      .from(base)
+      .groupBy(base.bucketStart)
+      .orderBy(base.bucketStart);
+
     const series = rows.map((row) => ({
       bucketStart: new Date(row.bucketStart as unknown as Date).toISOString(),
       count: row.count,
@@ -80,17 +83,11 @@ export async function GET(req: Request) {
       painAvg: row.painAvg,
     }));
 
-    /**
-     * For day bucket, it’s usually helpful to fill missing days so charts don’t “break”.
-     * We’ll fill only for bucket=day.
-     */
     if (bucket === "day") {
       const map = new Map<string, (typeof series)[number]>();
       for (const s of series) map.set(isoDayKey(new Date(s.bucketStart)), s);
 
       const filled: (typeof series)[number][] = [];
-      // We want rangeDays buckets ending at endUtc (exclusive)
-      // Build local day keys by stepping startUtc..endUtc
       for (let i = 0; i < rangeDays; i++) {
         const d = addDaysUtc(startUtc, i);
         const k = isoDayKey(d);

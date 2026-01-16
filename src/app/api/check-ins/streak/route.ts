@@ -21,29 +21,27 @@ export async function GET(req: Request) {
       url.searchParams.get("tzOffsetMinutes"),
       0
     );
-    // One param object reused everywhere (same $1)
-    const tzParam = sql.param(tzOffsetMinutes);
 
-    // One shifted expression reused everywhere
+    const tzParam = sql.param(tzOffsetMinutes);
     const shifted = sql`(${checkInEntries.createdAt} - (${tzParam} * interval '1 minute'))`;
-    // Convert createdAt into local-date keys in SQL:
-    // local_date = (created_at - offset minutes)::date
     const localDateExpr = sql`${shifted}::date`;
 
-    // Pull distinct local dates with at least one check-in.
-    // Limit lookback to 366 days to keep it cheap (streaks beyond that are rare and can be extended later)
-    const rows = await db
+    const base = db
       .select({ day: localDateExpr })
       .from(checkInEntries)
       .where(eq(checkInEntries.userId, user.id))
-      .groupBy(localDateExpr)
-      .orderBy(sql`${localDateExpr} desc`)
+      .as("base");
+
+    const rows = await db
+      .select({ day: base.day })
+      .from(base)
+      .groupBy(base.day)
+      .orderBy(sql`${base.day} desc`)
       .limit(366);
 
-    const set = new Set<string>(
-      rows.map((r) => {
-        // drizzle returns Date for ::date in many setups; normalize either way
-        const v: any = r.day;
+    const set = new Set(
+      rows.map((row) => {
+        const v: any = row.day;
         const d = v instanceof Date ? v : new Date(String(v));
         return d.toISOString().slice(0, 10);
       })
@@ -60,10 +58,7 @@ export async function GET(req: Request) {
 
     return NextResponse.json({
       success: true,
-      data: {
-        streakDays: streak,
-        todayKey,
-      },
+      data: { streakDays: streak, todayKey },
     });
   } catch (err: any) {
     console.error("[api/check-ins/streak GET] ERROR:", err);
