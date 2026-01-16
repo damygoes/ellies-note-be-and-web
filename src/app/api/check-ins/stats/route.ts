@@ -29,6 +29,12 @@ export async function GET(req: Request) {
       url.searchParams.get("tzOffsetMinutes"),
       0
     );
+    const tzParam = sql.param(tzOffsetMinutes);
+
+    const shifted = sql`(${checkInEntries.createdAt} - (${tzParam} * interval '1 minute'))`;
+
+    // bucket=day
+    const bucketExpr = sql`date_trunc('day', ${shifted})`;
 
     const rangeDaysRaw = parseIntParam(url.searchParams.get("range"), 7);
     const rangeDays = Math.min(365, Math.max(1, rangeDaysRaw));
@@ -43,26 +49,12 @@ export async function GET(req: Request) {
     // localTs = createdAt - tzOffsetMinutes minutes
     const localTs = sql`(${checkInEntries.createdAt} - (${tzOffsetMinutes} * interval '1 minute'))`;
 
-    // date_trunc('day'|'week'|'month', localTs)
-    const bucketExpr =
-      bucket === "week"
-        ? sql`date_trunc('week', ${localTs})`
-        : bucket === "month"
-        ? sql`date_trunc('month', ${localTs})`
-        : sql`date_trunc('day', ${localTs})`;
-
     const rows = await db
       .select({
-        bucketStart: bucketExpr, // timestamp (in "local" frame)
-        count: sql<number>`count(*)`.mapWith(Number),
-        energyAvg: sql<
-          number | null
-        >`avg(${checkInEntries.energyLevel})`.mapWith((v) =>
-          v == null ? null : Number(v)
-        ),
-        painAvg: sql<number | null>`avg(${checkInEntries.painLevel})`.mapWith(
-          (v) => (v == null ? null : Number(v))
-        ),
+        bucketStart: bucketExpr,
+        count: sql<number>`count(*)`,
+        energyAvg: sql<number | null>`avg(${checkInEntries.energyLevel})`,
+        painAvg: sql<number | null>`avg(${checkInEntries.painLevel})`,
       })
       .from(checkInEntries)
       .where(

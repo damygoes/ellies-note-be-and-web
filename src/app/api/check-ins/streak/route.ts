@@ -21,17 +21,19 @@ export async function GET(req: Request) {
       url.searchParams.get("tzOffsetMinutes"),
       0
     );
+    // One param object reused everywhere (same $1)
+    const tzParam = sql.param(tzOffsetMinutes);
 
+    // One shifted expression reused everywhere
+    const shifted = sql`(${checkInEntries.createdAt} - (${tzParam} * interval '1 minute'))`;
     // Convert createdAt into local-date keys in SQL:
     // local_date = (created_at - offset minutes)::date
-    const localDateExpr = sql`(${checkInEntries.createdAt} - (${tzOffsetMinutes} * interval '1 minute'))::date`;
+    const localDateExpr = sql`${shifted}::date`;
 
     // Pull distinct local dates with at least one check-in.
     // Limit lookback to 366 days to keep it cheap (streaks beyond that are rare and can be extended later)
     const rows = await db
-      .select({
-        day: localDateExpr,
-      })
+      .select({ day: localDateExpr })
       .from(checkInEntries)
       .where(eq(checkInEntries.userId, user.id))
       .groupBy(localDateExpr)
