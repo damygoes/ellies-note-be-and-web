@@ -5,7 +5,6 @@ import { db } from "@/db";
 import { checkInEntries } from "@/db/schema/checkInEntry";
 import { requireClerkUserId } from "@/lib/serverAuth";
 import { addDaysUtc } from "@/utils/date/addDaysUtc";
-import { isoDayKey } from "@/utils/date/isoDayKey";
 import { startOfLocalDay } from "@/utils/date/startOfLocalDay";
 import { getAppUserByClerkId } from "@/utils/getAppUserIdByClerkId";
 import { jsonError } from "@/utils/jsonError";
@@ -34,12 +33,18 @@ export async function GET(req: Request) {
     const rangeDaysRaw = parseIntParam(url.searchParams.get("range"), 7);
     const rangeDays = Math.min(365, Math.max(1, rangeDaysRaw));
 
+    // Range based on LOCAL day boundaries, expressed in UTC instants
     const now = new Date();
     const endUtc = addDaysUtc(startOfLocalDay(now, tzOffsetMinutes), 1);
     const startUtc = addDaysUtc(endUtc, -rangeDays);
 
+    // Shift createdAt into a "local-frame" timestamp by applying the offset
     const tzParam = sql.param(tzOffsetMinutes);
     const shifted = sql`(${checkInEntries.createdAt} - (${tzParam} * interval '1 minute'))`;
+
+    // Always compute a stable local day key: YYYY-MM-DD (as text)
+    // This is the key the frontend should map on.
+    const dayKeyExpr = sql<string>`(${shifted}::date)::text`.as("dayKey");
 
     const bucketStartExpr =
       bucket === "month"
@@ -48,12 +53,12 @@ export async function GET(req: Request) {
         ? sql`date_trunc('week', ${shifted})`
         : sql`date_trunc('day', ${shifted})`;
 
-    // alias required for subquery references
     const bucketStart = bucketStartExpr.as("bucketStart");
 
     const base = db
       .select({
         bucketStart,
+        dayKey: dayKeyExpr,
         energyLevel: checkInEntries.energyLevel,
         painLevel: checkInEntries.painLevel,
       })
@@ -70,34 +75,41 @@ export async function GET(req: Request) {
     const rows = await db
       .select({
         bucketStart: base.bucketStart,
+        dayKey: base.dayKey,
         count: sql<number>`count(*)`,
         energyAvg: sql<number | null>`avg(${base.energyLevel})`,
         painAvg: sql<number | null>`avg(${base.painLevel})`,
       })
       .from(base)
-      .groupBy(base.bucketStart)
+      .groupBy(base.bucketStart, base.dayKey)
       .orderBy(base.bucketStart);
 
     const series = rows.map((row) => ({
       bucketStart: new Date(row.bucketStart as unknown as Date).toISOString(),
+      dayKey: row.dayKey,
       count: row.count,
       energyAvg: row.energyAvg,
       painAvg: row.painAvg,
     }));
 
+    // For day bucket, fill missing days using dayKey (not ISO date math)
     if (bucket === "day") {
       const map = new Map<string, (typeof series)[number]>();
-      for (const s of series) map.set(isoDayKey(new Date(s.bucketStart)), s);
+      for (const s of series) map.set(s.dayKey, s);
 
       const filled: (typeof series)[number][] = [];
       for (let i = 0; i < rangeDays; i++) {
-        const d = addDaysUtc(startUtc, i);
-        const k = isoDayKey(d);
-        const existing = map.get(k);
+        const dUtc = addDaysUtc(startUtc, i);
+        // This dUtc is "local midnight in UTC instant form"
+        // Convert to the local dayKey by applying the same shift as above:
+        const local = new Date(dUtc.getTime() - tzOffsetMinutes * 60_000);
+        const dayKey = local.toISOString().slice(0, 10);
 
+        const existing = map.get(dayKey);
         filled.push(
           existing ?? {
-            bucketStart: d.toISOString(),
+            bucketStart: dUtc.toISOString(),
+            dayKey,
             count: 0,
             energyAvg: null,
             painAvg: null,
