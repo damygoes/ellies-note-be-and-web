@@ -59,15 +59,20 @@ export async function PATCH(req: Request) {
     const body = (await req.json()) as UpdateMeBody;
 
     const parsed = allowlistAndSanitize(body, {
-      firstName: { kind: "string", sanitize: (input) => input.trim() },
-      lastName: { kind: "string", sanitize: (input) => input.trim() },
-      username: { kind: "string", sanitize: (input) => input.trim() },
-      image: { kind: "string", sanitize: (input) => input.trim() },
+      firstName: { kind: "string", optional: true, sanitize: (s) => s.trim() },
+      lastName: { kind: "string", optional: true, sanitize: (s) => s.trim() },
+      username: { kind: "string", optional: true, sanitize: (s) => s.trim() },
+      image: { kind: "string", optional: true, sanitize: (s) => s.trim() },
     } as const);
 
     if (!parsed.ok) return jsonError(400, parsed.message);
 
     const updates = parsed.data;
+
+    // enforce "at least one field" for PATCH
+    if (Object.keys(updates).length === 0) {
+      return jsonError(400, "No valid fields to update");
+    }
 
     const updatedRows = await db
       .update(users)
