@@ -1,4 +1,4 @@
-import { eq, sql } from "drizzle-orm";
+import { desc, eq, sql } from "drizzle-orm";
 import { NextResponse } from "next/server";
 
 import { db } from "@/db";
@@ -24,10 +24,12 @@ export async function GET(req: Request) {
 
     const tzParam = sql.param(tzOffsetMinutes);
     const shifted = sql`(${checkInEntries.createdAt} - (${tzParam} * interval '1 minute'))`;
-    const localDateExpr = sql`${shifted}::date`;
+
+    // alias required for subquery references
+    const localDay = sql`${shifted}::date`.as("day");
 
     const base = db
-      .select({ day: localDateExpr })
+      .select({ day: localDay })
       .from(checkInEntries)
       .where(eq(checkInEntries.userId, user.id))
       .as("base");
@@ -36,7 +38,7 @@ export async function GET(req: Request) {
       .select({ day: base.day })
       .from(base)
       .groupBy(base.day)
-      .orderBy(sql`${base.day} desc`)
+      .orderBy(desc(base.day))
       .limit(366);
 
     const set = new Set(

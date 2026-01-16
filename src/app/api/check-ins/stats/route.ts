@@ -12,6 +12,7 @@ import { jsonError } from "@/utils/jsonError";
 import { parseIntParam } from "@/utils/parseIntParam";
 
 type Bucket = "day" | "week" | "month";
+
 function parseBucket(v: string | null): Bucket {
   if (v === "week" || v === "month" || v === "day") return v;
   return "day";
@@ -37,21 +38,22 @@ export async function GET(req: Request) {
     const endUtc = addDaysUtc(startOfLocalDay(now, tzOffsetMinutes), 1);
     const startUtc = addDaysUtc(endUtc, -rangeDays);
 
-    // Put the timezone offset in ONE place (subquery)
     const tzParam = sql.param(tzOffsetMinutes);
     const shifted = sql`(${checkInEntries.createdAt} - (${tzParam} * interval '1 minute'))`;
 
-    const bucketExpr =
+    const bucketStartExpr =
       bucket === "month"
         ? sql`date_trunc('month', ${shifted})`
         : bucket === "week"
         ? sql`date_trunc('week', ${shifted})`
         : sql`date_trunc('day', ${shifted})`;
 
-    // Compute bucketStart once, then GROUP BY the column
+    // alias required for subquery references
+    const bucketStart = bucketStartExpr.as("bucketStart");
+
     const base = db
       .select({
-        bucketStart: bucketExpr,
+        bucketStart,
         energyLevel: checkInEntries.energyLevel,
         painLevel: checkInEntries.painLevel,
       })
