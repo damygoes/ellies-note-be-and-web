@@ -60,12 +60,14 @@ export const POST = verifySignatureAppRouter(async (_req: Request) => {
       .from(users)
       .innerJoin(
         notificationSettings,
-        eq(notificationSettings.userId, users.id)
+        eq(notificationSettings.userId, users.id),
       )
       .innerJoin(pushTokens, eq(pushTokens.userId, users.id))
       .where(eq(notificationSettings.enabled, true));
 
     let sentCount = 0;
+
+    console.log('[cron/reminders] rows:', rows.length);
 
     for (const row of rows) {
       const timezone = row.timezone ?? '';
@@ -73,10 +75,16 @@ export const POST = verifySignatureAppRouter(async (_req: Request) => {
 
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       const schedule = (row.settings as any)?.checkIns?.schedule;
+      console.log('[cron/reminders] user', row.userId, {
+        token: row.expoPushToken?.slice(0, 20) + '...',
+        timezone: row.timezone,
+        times: schedule?.times,
+      });
       const times: ScheduleTime[] = schedule?.times ?? [];
       if (!Array.isArray(times) || times.length === 0) continue;
 
       const due = getDueSlotMinute({ now, timezone, times, windowMinutes: 1 });
+      console.log('[cron/reminders] due?', row.userId, due);
       if (!due) continue;
 
       // Dedupe: only send once per user per local day per slot-minute
@@ -92,11 +100,12 @@ export const POST = verifySignatureAppRouter(async (_req: Request) => {
         continue;
       }
 
-      await sendExpoPush(row.expoPushToken, {
+      const expoRes = await sendExpoPush(row.expoPushToken, {
         title: 'Time for a check-in',
         body: 'A 30-second check-in helps spot patterns.',
         data: { kind: 'check_in_reminder' },
       });
+      console.log('[cron/reminders] expo response', row.userId, expoRes);
 
       sentCount += 1;
     }
