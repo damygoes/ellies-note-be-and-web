@@ -46,6 +46,7 @@ async function sendExpoPush(expoPushToken: string, payload: SendArgs) {
 }
 
 // QStash-only handler
+// eslint-disable-next-line @typescript-eslint/no-unused-vars
 export const POST = verifySignatureAppRouter(async (_req: Request) => {
   try {
     const now = new Date();
@@ -67,24 +68,16 @@ export const POST = verifySignatureAppRouter(async (_req: Request) => {
 
     let sentCount = 0;
 
-    console.log('[cron/reminders] rows:', rows.length);
-
     for (const row of rows) {
       const timezone = row.timezone ?? '';
       if (!timezone) continue;
 
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       const schedule = (row.settings as any)?.checkIns?.schedule;
-      console.log('[cron/reminders] user', row.userId, {
-        token: row.expoPushToken?.slice(0, 20) + '...',
-        timezone: row.timezone,
-        times: schedule?.times,
-      });
       const times: ScheduleTime[] = schedule?.times ?? [];
       if (!Array.isArray(times) || times.length === 0) continue;
 
       const due = getDueSlotMinute({ now, timezone, times, windowMinutes: 1 });
-      console.log('[cron/reminders] due?', row.userId, due);
       if (!due) continue;
 
       // Dedupe: only send once per user per local day per slot-minute
@@ -100,12 +93,14 @@ export const POST = verifySignatureAppRouter(async (_req: Request) => {
         continue;
       }
 
-      const expoRes = await sendExpoPush(row.expoPushToken, {
+      await sendExpoPush(row.expoPushToken, {
         title: 'Time for a check-in',
         body: 'A 30-second check-in helps spot patterns.',
-        data: { kind: 'check_in_reminder' },
+        data: {
+          kind: 'check_in_reminder',
+          route: '/(app)/(tabs)/(home)/check-in',
+        },
       });
-      console.log('[cron/reminders] expo response', row.userId, expoRes);
 
       sentCount += 1;
     }
