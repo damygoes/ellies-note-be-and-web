@@ -85,6 +85,37 @@ export function normalizeSchedule(input: unknown): {
   return { frequency, times: timesFromInput };
 }
 
+/**
+ * Normalize a schedule PATCH payload into a server-safe schedule.
+ *
+ * Key rule:
+ * - frequency="twice_daily" => ensure defaults if times missing/empty
+ * - frequency="custom"      => allow empty times (user can choose none)
+ */
+export function normalizeScheduleUpdate(input: {
+  frequency?: NotificationFrequency;
+  times?: NotificationTime[];
+}): { frequency: NotificationFrequency; times: NotificationTime[] } {
+  const frequency: NotificationFrequency =
+    input.frequency === 'custom' ? 'custom' : 'twice_daily';
+
+  const rawTimes = input.times ?? [];
+  const times = Array.isArray(rawTimes)
+    ? sortTimes(rawTimes.filter(validateTime))
+    : [];
+
+  if (frequency === 'twice_daily') {
+    // If twice_daily but times missing, provide defaults
+    return {
+      frequency,
+      times: times.length ? times : DEFAULT_TWICE_DAILY,
+    };
+  }
+
+  // custom: use whatever they configured (may be empty)
+  return { frequency, times };
+}
+
 export async function getOrCreateSettingsRow(userId: string) {
   const existing = await db
     .select()
@@ -140,7 +171,11 @@ export function mergeSettings(
 
   // schedule update (validated/normalized)
   if (updates.checkIns?.schedule) {
-    const normalized = normalizeSchedule(updates.checkIns.schedule);
+    const normalized = normalizeScheduleUpdate({
+      frequency: updates.checkIns.schedule.frequency,
+      times: updates.checkIns.schedule.times,
+    });
+
     next.checkIns.schedule = normalized;
   }
 
@@ -223,4 +258,10 @@ function extractScheduleLike(input: unknown): unknown {
   }
 
   return null;
+}
+
+function sortTimes(times: NotificationTime[]) {
+  return [...times].sort((a, b) =>
+    a.hour !== b.hour ? a.hour - b.hour : a.minute - b.minute,
+  );
 }
