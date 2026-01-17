@@ -171,24 +171,24 @@ function getDueSlotMinute({
   now,
   timezone,
   times,
-  windowMinutes = 1,
+  windowMinutes = 3,
 }: {
   now: Date;
   timezone: string;
   times: ScheduleTime[];
   windowMinutes?: number;
 }): { localDate: string; minuteOfDay: number } | null {
-  if (!timezone) return null;
-
   const { localDate, localMinuteOfDay } = getLocalParts(now, timezone);
 
-  // normalize + sort times
-  const cleaned = times.filter(isValidTime).map((t) => minuteOfDay(t));
-  cleaned.sort((a, b) => a - b);
+  const slots = times
+    .filter(isValidTime)
+    .map(minuteOfDay)
+    .sort((a, b) => a - b);
 
-  for (const slot of cleaned) {
-    const diff = Math.abs(localMinuteOfDay - slot);
-    if (diff <= windowMinutes) {
+  for (const slot of slots) {
+    // Only send if we've reached the scheduled time,
+    // and we're still within a small grace window.
+    if (localMinuteOfDay >= slot && localMinuteOfDay < slot + windowMinutes) {
       return { localDate, minuteOfDay: slot };
     }
   }
