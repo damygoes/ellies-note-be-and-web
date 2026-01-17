@@ -1,4 +1,4 @@
-export type NotificationFrequency = "twice_daily" | "custom";
+export type NotificationFrequency = 'twice_daily' | 'custom';
 export type NotificationTime = { hour: number; minute: number };
 
 export type NotificationSettings = {
@@ -15,8 +15,10 @@ export type NotificationSettings = {
   };
   digest: {
     enabled: boolean;
-    cadence: "weekly";
+    cadence: 'weekly';
   };
 };
 
 export type UpdateNotificationSettings = Partial<NotificationSettings>;
+
+export type UnknownRecord = Record<string, unknown>;
