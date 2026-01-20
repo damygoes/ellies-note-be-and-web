@@ -1,26 +1,26 @@
-import { db } from '@/db';
-import { notificationSettings } from '@/db/schema/notificationSettings';
-import { eq } from 'drizzle-orm';
+import { db } from "@/db";
+import { notificationSettings } from "@/db/schema/notificationSettings";
+import { eq } from "drizzle-orm";
+import { DEFAULT_TWICE_DAILY } from "./constants";
 import type {
   NotificationFrequency,
   NotificationSettings,
   NotificationTime,
   UnknownRecord,
   UpdateNotificationSettings,
-} from './types';
-import { DEFAULT_TWICE_DAILY } from './constants';
+} from "./types";
 
 export function defaultNotificationSettings(): NotificationSettings {
   return {
-    enabled: true,
+    enabled: false,
     checkIns: {
       schedule: {
-        frequency: 'twice_daily',
+        frequency: "twice_daily",
         times: DEFAULT_TWICE_DAILY,
       },
     },
-    delivery: { sound: true, vibration: true },
-    digest: { enabled: true, cadence: 'weekly' },
+    delivery: { sound: false, vibration: false },
+    digest: { enabled: false, cadence: "weekly" },
   };
 }
 
@@ -38,8 +38,8 @@ export function validateTime(t: NotificationTime) {
 export function isValidTime(value: unknown): value is NotificationTime {
   if (!isRecord(value)) return false;
 
-  const hour = getNested(value, 'hour');
-  const minute = getNested(value, 'minute');
+  const hour = getNested(value, "hour");
+  const minute = getNested(value, "minute");
 
   return (
     Number.isInteger(hour) &&
@@ -65,16 +65,16 @@ export function normalizeSchedule(input: unknown): {
   const scheduleObj = isRecord(scheduleLike) ? scheduleLike : null;
 
   const frequency = parseFrequency(
-    scheduleObj ? getNested(scheduleObj, 'frequency') : null,
+    scheduleObj ? getNested(scheduleObj, "frequency") : null,
   );
 
-  const rawTimes = scheduleObj ? getNested(scheduleObj, 'times') : null;
+  const rawTimes = scheduleObj ? getNested(scheduleObj, "times") : null;
   const timesFromInput = Array.isArray(rawTimes)
     ? rawTimes.filter(isValidTime)
     : [];
 
   // If twice_daily but times missing, provide defaults
-  if (frequency === 'twice_daily') {
+  if (frequency === "twice_daily") {
     return {
       frequency,
       times: timesFromInput.length ? timesFromInput : DEFAULT_TWICE_DAILY,
@@ -97,14 +97,14 @@ export function normalizeScheduleUpdate(input: {
   times?: NotificationTime[];
 }): { frequency: NotificationFrequency; times: NotificationTime[] } {
   const frequency: NotificationFrequency =
-    input.frequency === 'custom' ? 'custom' : 'twice_daily';
+    input.frequency === "custom" ? "custom" : "twice_daily";
 
   const rawTimes = input.times ?? [];
   const times = Array.isArray(rawTimes)
     ? sortTimes(rawTimes.filter(validateTime))
     : [];
 
-  if (frequency === 'twice_daily') {
+  if (frequency === "twice_daily") {
     // If twice_daily but times missing, provide defaults
     return {
       frequency,
@@ -227,7 +227,7 @@ export function computeNextReminderAtUtc(opts: {
 }
 
 function isRecord(value: unknown): value is UnknownRecord {
-  return typeof value === 'object' && value !== null;
+  return typeof value === "object" && value !== null;
 }
 
 function getNested(obj: UnknownRecord, key: string): unknown {
@@ -235,24 +235,24 @@ function getNested(obj: UnknownRecord, key: string): unknown {
 }
 
 function parseFrequency(value: unknown): NotificationFrequency {
-  return value === 'custom' ? 'custom' : 'twice_daily';
+  return value === "custom" ? "custom" : "twice_daily";
 }
 
 function extractScheduleLike(input: unknown): unknown {
   // Handle both shapes (your settings JSON may be nested depending on migrations/seed)
   if (!isRecord(input)) return null;
 
-  const checkIns = getNested(input, 'checkIns');
+  const checkIns = getNested(input, "checkIns");
   if (isRecord(checkIns)) {
-    const schedule = getNested(checkIns, 'schedule');
+    const schedule = getNested(checkIns, "schedule");
     if (schedule != null) return schedule;
   }
 
-  const maybeSettings = getNested(input, 'settings');
+  const maybeSettings = getNested(input, "settings");
   if (isRecord(maybeSettings)) {
-    const nestedCheckIns = getNested(maybeSettings, 'checkIns');
+    const nestedCheckIns = getNested(maybeSettings, "checkIns");
     if (isRecord(nestedCheckIns)) {
-      const nestedSchedule = getNested(nestedCheckIns, 'schedule');
+      const nestedSchedule = getNested(nestedCheckIns, "schedule");
       if (nestedSchedule != null) return nestedSchedule;
     }
   }
