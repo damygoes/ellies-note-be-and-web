@@ -1,11 +1,11 @@
-import { NextResponse } from 'next/server';
-import { verifySignatureAppRouter } from '@upstash/qstash/nextjs';
-import { eq } from 'drizzle-orm';
-import { db } from '@/db';
-import { users } from '@/db/schema/user';
-import { notificationSettings } from '@/db/schema/notificationSettings';
-import { pushTokens } from '@/db/schema/pushTokens';
-import { reminderSends } from '@/db/schema/reminderSends';
+import { db } from "@/db";
+import { notificationSettings } from "@/db/schema/notificationSettings";
+import { pushTokens } from "@/db/schema/pushTokens";
+import { reminderSends } from "@/db/schema/reminderSends";
+import { users } from "@/db/schema/user";
+import { verifySignatureAppRouter } from "@upstash/qstash/nextjs";
+import { eq } from "drizzle-orm";
+import { NextResponse } from "next/server";
 
 type ScheduleTime = { hour: number; minute: number };
 
@@ -18,18 +18,18 @@ type SendArgs = {
 async function sendExpoPush(expoPushToken: string, payload: SendArgs) {
   const message = {
     to: expoPushToken,
-    sound: 'default',
+    sound: "default",
     title: payload.title,
     body: payload.body,
     data: payload.data ?? {},
   };
 
-  const res = await fetch('https://exp.host/--/api/v2/push/send', {
-    method: 'POST',
+  const res = await fetch("https://exp.host/--/api/v2/push/send", {
+    method: "POST",
     headers: {
-      Accept: 'application/json',
-      'Accept-encoding': 'gzip, deflate',
-      'Content-Type': 'application/json',
+      Accept: "application/json",
+      "Accept-encoding": "gzip, deflate",
+      "Content-Type": "application/json",
     },
     body: JSON.stringify(message),
   });
@@ -69,7 +69,7 @@ export const POST = verifySignatureAppRouter(async (_req: Request) => {
     let sentCount = 0;
 
     for (const row of rows) {
-      const timezone = row.timezone ?? '';
+      const timezone = row.timezone ?? "";
       if (!timezone) continue;
 
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -94,11 +94,10 @@ export const POST = verifySignatureAppRouter(async (_req: Request) => {
       }
 
       await sendExpoPush(row.expoPushToken, {
-        title: 'Time for a check-in',
-        body: 'A 30-second check-in helps spot patterns.',
+        title: "Time for a check-in",
+        body: "A 30-second check-in helps spot patterns.",
         data: {
-          kind: 'check_in_reminder',
-          route: '/(app)/(tabs)/(home)/check-in',
+          kind: "check_in_reminder",
         },
       });
 
@@ -107,7 +106,7 @@ export const POST = verifySignatureAppRouter(async (_req: Request) => {
 
     return NextResponse.json({ success: true, sentCount });
   } catch (e) {
-    console.error('[cron/reminders] ERROR:', e);
+    console.error("[cron/reminders] ERROR:", e);
     return NextResponse.json({ success: false }, { status: 500 });
   }
 });
@@ -129,27 +128,27 @@ function minuteOfDay(t: ScheduleTime) {
 
 function getLocalParts(now: Date, timezone: string) {
   // Produces stable local parts using IANA timezone
-  const dtf = new Intl.DateTimeFormat('en-CA', {
+  const dtf = new Intl.DateTimeFormat("en-CA", {
     timeZone: timezone,
-    year: 'numeric',
-    month: '2-digit',
-    day: '2-digit',
-    hour: '2-digit',
-    minute: '2-digit',
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+    hour: "2-digit",
+    minute: "2-digit",
     hour12: false,
   });
 
   const parts = dtf.formatToParts(now);
   const get = (type: string) => parts.find((p) => p.type === type)?.value;
 
-  const y = get('year');
-  const mo = get('month');
-  const d = get('day');
-  const h = get('hour');
-  const mi = get('minute');
+  const y = get("year");
+  const mo = get("month");
+  const d = get("day");
+  const h = get("hour");
+  const mi = get("minute");
 
   if (!y || !mo || !d || !h || !mi) {
-    throw new Error('Failed to compute local parts');
+    throw new Error("Failed to compute local parts");
   }
 
   const localDate = `${y}-${mo}-${d}`; // ISO date key in local tz
