@@ -24,14 +24,14 @@ export function defaultNotificationSettings(): NotificationSettings {
   };
 }
 
-export function validateTime(t: NotificationTime) {
+export function validateTime(time: NotificationTime) {
   return (
-    Number.isInteger(t.hour) &&
-    Number.isInteger(t.minute) &&
-    t.hour >= 0 &&
-    t.hour <= 23 &&
-    t.minute >= 0 &&
-    t.minute <= 59
+    Number.isInteger(time.hour) &&
+    Number.isInteger(time.minute) &&
+    time.hour >= 0 &&
+    time.hour <= 23 &&
+    time.minute >= 0 &&
+    time.minute <= 59
   );
 }
 
