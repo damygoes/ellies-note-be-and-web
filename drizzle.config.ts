@@ -6,7 +6,10 @@ export default defineConfig({
   schema: "./src/db/schema/*",
   dialect: "postgresql",
   dbCredentials: {
-    host: process.env.DATABASE_HOST!,
+    host:
+      process.env.NODE_ENV === "production"
+        ? process.env.DATABASE_HOST_PROD!
+        : process.env.DATABASE_HOST_DEV!,
     port: parseInt(process.env.DATABASE_PORT!),
     user: process.env.DATABASE_USERNAME!,
     password: process.env.DATABASE_PASSWORD!,
