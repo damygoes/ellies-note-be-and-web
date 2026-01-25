@@ -55,7 +55,7 @@ function Hero() {
           >
             Quick check-ins for energy, pain, and context—so you can spot
             patterns over time and make calmer, smarter adjustments. Built with
-            love for Ellen. Guided by an owl with a pen.
+            love for you. Guided by an owl with a pen.
           </motion.p>
 
           <motion.div
