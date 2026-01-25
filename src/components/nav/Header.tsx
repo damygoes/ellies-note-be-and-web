@@ -30,7 +30,7 @@ export function AppHeader() {
             <OwlMark className="h-6 w-6 text-foreground" />
             <div className="pointer-events-none absolute inset-0 rounded-xl opacity-0 ring-2 ring-ring/30 transition group-hover:opacity-100" />
           </div>
-          <div className="leading-tight">
+          <div className="leading-tight max-w-[120px] overflow-hidden lg:max-w-none">
             <div className="text-sm font-semibold tracking-tight">
               ElliesNote
             </div>
