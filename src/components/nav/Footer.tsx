@@ -73,7 +73,7 @@ export function AppFooter() {
                   Privacy Policy
                 </Link>
                 <Link
-                  href="/terms"
+                  href="/terms-and-conditions"
                   className="text-sm text-muted-foreground hover:text-foreground"
                 >
                   Terms
