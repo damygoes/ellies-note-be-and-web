@@ -1,3 +1,4 @@
+import { serverEnv } from "@/lib/env.server";
 import "dotenv/config";
 import { defineConfig } from "drizzle-kit";
 
@@ -6,14 +7,11 @@ export default defineConfig({
   schema: "./src/db/schema/*",
   dialect: "postgresql",
   dbCredentials: {
-    host:
-      process.env.NODE_ENV === "production"
-        ? process.env.DATABASE_HOST_PROD!
-        : process.env.DATABASE_HOST_DEV!,
-    port: parseInt(process.env.DATABASE_PORT!),
-    user: process.env.DATABASE_USERNAME!,
-    password: process.env.DATABASE_PASSWORD!,
-    database: process.env.DATABASE_NAME!,
+    host: serverEnv.DATABASE_HOST,
+    port: serverEnv.DATABASE_PORT,
+    user: serverEnv.DATABASE_USERNAME,
+    password: serverEnv.DATABASE_PASSWORD,
+    database: serverEnv.DATABASE_NAME,
     ssl: "require",
   },
   // verbose: true,
