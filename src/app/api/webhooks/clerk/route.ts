@@ -10,10 +10,6 @@ import { Webhook } from "svix";
 export async function POST(req: Request) {
   const secret = serverEnv.CLERK_WEBHOOK_SECRET;
 
-  console.log("[webhook] vercelEnv", process.env.VERCEL_ENV);
-  console.log("[webhook] dbHost", new URL(serverEnv.DATABASE_URL).host);
-  console.log("[webhook] whsecPrefix", secret.slice(0, 10));
-
   if (!secret)
     return NextResponse.json(
       { error: "Missing CLERK_WEBHOOK_SECRET" },
@@ -63,10 +59,6 @@ export async function POST(req: Request) {
 
     const count = await db.execute(
       sql`select count(*)::int as count from public.users`,
-    );
-    console.log(
-      "[webhook] users count after insert =",
-      count.rows.length > 0 ? count.rows[0].count : 0,
     );
 
     const [row] = await db
