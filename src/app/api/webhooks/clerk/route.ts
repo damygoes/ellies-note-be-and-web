@@ -2,7 +2,7 @@ import { db } from "@/db";
 import { users } from "@/db/schema/user";
 import { serverEnv } from "@/lib/env.server";
 import type { WebhookEvent } from "@clerk/backend"; // optional typing; you can also define your own
-import { eq } from "drizzle-orm";
+import { eq, sql } from "drizzle-orm";
 import { headers } from "next/headers";
 import { NextResponse } from "next/server";
 import { Webhook } from "svix";
@@ -60,6 +60,14 @@ export async function POST(req: Request) {
         image,
       })
       .onConflictDoNothing({ target: users.clerkUserId });
+
+    const count = await db.execute(
+      sql`select count(*)::int as count from public.users`,
+    );
+    console.log(
+      "[webhook] users count after insert =",
+      count.rows.length > 0 ? count.rows[0].count : 0,
+    );
 
     const [row] = await db
       .select()
