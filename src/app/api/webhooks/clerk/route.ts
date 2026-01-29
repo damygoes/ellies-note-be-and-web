@@ -1,5 +1,6 @@
 import { db } from "@/db";
 import { users } from "@/db/schema/user";
+import { serverEnv } from "@/lib/env.server";
 import type { WebhookEvent } from "@clerk/backend"; // optional typing; you can also define your own
 import { eq } from "drizzle-orm";
 import { headers } from "next/headers";
@@ -7,11 +8,11 @@ import { NextResponse } from "next/server";
 import { Webhook } from "svix";
 
 export async function POST(req: Request) {
-  const secret = process.env.CLERK_WEBHOOK_SECRET;
+  const secret = serverEnv.CLERK_WEBHOOK_SECRET;
   if (!secret)
     return NextResponse.json(
       { error: "Missing CLERK_WEBHOOK_SECRET" },
-      { status: 500 }
+      { status: 500 },
     );
 
   // IMPORTANT: use raw body text for signature verification

@@ -1,7 +1,8 @@
 import { z } from "zod";
 
 const serverEnvSchema = z.object({
-  NODE_ENV: z.enum(["development", "production"]),
+  VERCEL_ENV: z.enum(["development", "preview", "production"]).optional(),
+  NODE_ENV: z.string().optional(),
 
   DATABASE_PORT: z
     .string()
@@ -16,7 +17,6 @@ const serverEnvSchema = z.object({
 
   CLERK_SECRET_KEY: z.string().min(1),
   CLERK_WEBHOOK_SECRET: z.string().min(1),
-  NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY: z.string().min(1),
 
   QSTASH_CURRENT_SIGNING_KEY: z.string().min(1),
   QSTASH_NEXT_SIGNING_KEY: z.string().min(1),
