@@ -1,6 +1,6 @@
 import { IOS_APP_STORE_URL, navItems } from "@/lib/constants";
+import Image from "next/image";
 import Link from "next/link";
-import { OwlMark } from "../icons";
 
 export function AppFooter() {
   return (
@@ -9,8 +9,13 @@ export function AppFooter() {
         <div className="flex flex-col gap-8 md:flex-row md:items-start md:justify-between">
           <div className="max-w-sm">
             <div className="flex items-center gap-3">
-              <div className="grid h-10 w-10 place-items-center rounded-xl bg-card/70 ring-1 ring-border/60">
-                <OwlMark className="h-6 w-6 text-foreground" />
+              <div className="relative grid h-10 w-10 place-items-center rounded-xl bg-card/70 ring-1 ring-border/60">
+                <Image
+                  src="/images/ellies-note-logo-light-mode.png"
+                  alt="An owl with a pen and notepad representing the app"
+                  fill
+                  className="h-6 w-6 text-foreground"
+                />
               </div>
               <div>
                 <div className="text-sm font-semibold">ElliesNote</div>

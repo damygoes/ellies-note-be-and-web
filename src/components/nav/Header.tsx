@@ -1,9 +1,9 @@
 "use client";
 
 import { IOS_APP_STORE_URL, navItems } from "@/lib/constants";
+import Image from "next/image";
 import Link from "next/link";
 import { useEffect, useState } from "react";
-import { OwlMark } from "../icons";
 
 export function AppHeader() {
   const [scrolled, setScrolled] = useState(false);
@@ -27,7 +27,12 @@ export function AppHeader() {
       <div className="mx-auto flex w-full max-w-7xl items-center justify-between px-4 py-4 sm:px-6 lg:px-8">
         <Link href="/" className="group inline-flex items-center gap-3">
           <div className="relative grid h-10 w-10 place-items-center rounded-xl bg-card/70 ring-1 ring-border/60">
-            <OwlMark className="h-6 w-6 text-foreground" />
+            <Image
+              src="/images/ellies-note-logo-light-mode.png"
+              alt="An owl with a pen and notepad representing the app"
+              fill
+              className="h-6 w-6 text-foreground"
+            />
             <div className="pointer-events-none absolute inset-0 rounded-xl opacity-0 ring-2 ring-ring/30 transition group-hover:opacity-100" />
           </div>
           <div className="leading-tight max-w-[120px] overflow-hidden lg:max-w-none">
