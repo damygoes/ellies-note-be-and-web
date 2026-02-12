@@ -78,6 +78,12 @@ export function AppFooter() {
                 >
                   Terms
                 </Link>
+                <Link
+                  href="/support"
+                  className="text-sm text-muted-foreground hover:text-foreground"
+                >
+                  Support
+                </Link>
               </div>
             </div>
           </div>
