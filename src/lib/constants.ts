@@ -8,7 +8,8 @@ export const AppConstants = {
   DEVELOPER_NAME: "Damilola Bada",
 };
 
-export const IOS_APP_STORE_URL = "https://apps.apple.com/app/id0000000000"; // TODO: replace with your App Store URL
+export const IOS_APP_STORE_URL =
+  "https://apps.apple.com/app/elliesnote/id6758291012";
 
 export const navItems: NavItem[] = [
   // { label: "Features", href: "#features" },
