@@ -15,6 +15,7 @@ type CreateCheckInDTO = {
   painLevel: number;
   influencedBy?: string[];
   note?: string;
+  createdAt?: string;
 };
 
 export async function GET(req: Request) {
@@ -27,13 +28,10 @@ export async function GET(req: Request) {
 
     const limit = Math.min(
       50,
-      Math.max(1, parseIntParam(url.searchParams.get("limit"), 20))
+      Math.max(1, parseIntParam(url.searchParams.get("limit"), 20)),
     );
 
-    // Cursor pagination: return entries older than this timestamp
     const cursorDate = parseDateParam(url.searchParams.get("cursor"));
-
-    // Optional range filter
     const fromDate = parseDateParam(url.searchParams.get("from"));
     const toDate = parseDateParam(url.searchParams.get("to"));
 
@@ -50,7 +48,6 @@ export async function GET(req: Request) {
       .orderBy(desc(checkInEntries.createdAt))
       .limit(limit);
 
-    // Next cursor: oldest item returned (use its createdAt)
     const nextCursor =
       rows.length > 0 ? rows[rows.length - 1]!.createdAt.toISOString() : null;
 
@@ -88,21 +85,54 @@ export async function POST(req: Request) {
         optional: true,
         sanitize: (input) => input.trim().slice(0, 2000),
       },
+      createdAt: {
+        kind: "string",
+        optional: true,
+        sanitize: (input) => input.trim(),
+      },
     } as const);
 
     if (!parsed.ok) return jsonError(400, parsed.message);
 
-    const { energyLevel, painLevel, influencedBy, note } = parsed.data;
+    const { energyLevel, painLevel, influencedBy, note, createdAt } =
+      parsed.data;
 
-    if (!isIntegerInRange(energyLevel, 1, 10))
+    if (!isIntegerInRange(energyLevel, 1, 10)) {
       return jsonError(400, "energyLevel must be an integer between 1 and 10");
-    if (!isIntegerInRange(painLevel, 0, 10))
+    }
+
+    if (!isIntegerInRange(painLevel, 0, 10)) {
       return jsonError(400, "painLevel must be an integer between 0 and 10");
+    }
 
     const tags = (influencedBy ?? [])
       .map((tag) => String(tag).trim())
       .filter(Boolean)
       .slice(0, 20);
+
+    let createdAtDate: Date | undefined;
+
+    if (createdAt) {
+      createdAtDate = new Date(createdAt);
+
+      if (Number.isNaN(createdAtDate.getTime())) {
+        return jsonError(400, "createdAt must be a valid ISO date");
+      }
+
+      const now = new Date();
+      const sevenDaysAgo = new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000);
+
+      if (createdAtDate > now) {
+        return jsonError(400, "createdAt cannot be in the future");
+      }
+
+      if (createdAtDate < sevenDaysAgo) {
+        return jsonError(
+          400,
+          "Backfilled entries can only be up to 7 days old",
+        );
+      }
+    }
 
     const inserted = await db
       .insert(checkInEntries)
@@ -112,12 +142,13 @@ export async function POST(req: Request) {
         painLevel,
         influencedBy: tags,
         note,
+        createdAt: createdAtDate ?? new Date(),
       })
       .returning();
 
     return NextResponse.json(
       { success: true, data: inserted[0] },
-      { status: 201 }
+      { status: 201 },
     );
   } catch (err) {
     console.error("[api/check-ins POST] ERROR:", err);
