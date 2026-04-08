@@ -26,10 +26,15 @@ export async function GET(req: Request) {
     if (!user) return jsonError(404, "User not found");
 
     const url = new URL(req.url);
-    parseIntParam(url.searchParams.get("tzOffsetMinutes"), 0); // kept for future; not used in this basic insight
+    parseIntParam(url.searchParams.get("tzOffsetMinutes"), 0); // optional for future use
+
+    const rangeDays = Math.min(
+      90,
+      Math.max(7, parseIntParam(url.searchParams.get("rangeDays"), 14)),
+    );
 
     const since = new Date();
-    since.setUTCDate(since.getUTCDate() - 14);
+    since.setUTCDate(since.getUTCDate() - rangeDays);
 
     const rows = await db
       .select({
