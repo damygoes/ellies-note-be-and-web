@@ -9,19 +9,15 @@ import { startOfLocalDay } from '@/utils/date/startOfLocalDay';
 import { getAppUserByClerkId } from '@/utils/getAppUserIdByClerkId';
 import { jsonError } from '@/utils/jsonError';
 import { parseIntParam } from '@/utils/parseIntParam';
-import {
-  computeNextReminderAtUtc,
-  normalizeSchedule,
-} from '@/features/notifications/utils';
+import { computeNextReminderAtUtc } from '@/features/notifications/utils';
 
 type TodayResponse = {
   dayStartUtc: string;
   dayEndUtc: string;
   count: number;
   energyAvg: number | null;
-  painAvg: number | null;
   lastCheckIn: null | { createdAt: string };
-  nextReminderAt: string | null; // ISO UTC
+  nextReminderAt: string | null;
   target: number;
 };
 
@@ -45,12 +41,7 @@ export async function GET(req: Request) {
     const [agg] = await db
       .select({
         count: sql<number>`count(*)`.mapWith(Number),
-        energyAvg: sql<
-          number | null
-        >`avg(${checkInEntries.energyLevel})`.mapWith((value) =>
-          value == null ? null : Number(value),
-        ),
-        painAvg: sql<number | null>`avg(${checkInEntries.painLevel})`.mapWith(
+        energyAvg: sql<number | null>`avg(${checkInEntries.energyLevel})`.mapWith(
           (value) => (value == null ? null : Number(value)),
         ),
       })
@@ -64,9 +55,7 @@ export async function GET(req: Request) {
       );
 
     const last = await db
-      .select({
-        createdAt: checkInEntries.createdAt,
-      })
+      .select({ createdAt: checkInEntries.createdAt })
       .from(checkInEntries)
       .where(
         and(
@@ -88,33 +77,16 @@ export async function GET(req: Request) {
       .limit(1);
 
     let nextReminderAt: string | null = null;
-
-    // Product rule: default target is 2 check-ins/day.
-    // If you want target=0 when reminders are disabled, set target=0 when !enabled.
-    let target = 2;
+    const target = 2;
 
     if (notificationRow[0]?.enabled) {
-      // JSONB comes back as unknown; normalizeSchedule handles both schema shapes.
-      const settings: unknown = notificationRow[0].settings;
-
-      const schedule = normalizeSchedule(settings);
-      const times = schedule.times;
-
-      // target logic:
-      // - twice_daily => 2
-      // - custom => at least 2 (or use times.length directly if you want)
-      if (schedule.frequency === 'custom') {
-        target = Math.max(2, times.length);
-      } else {
-        target = 2;
-      }
-
+      const settings = notificationRow[0].settings;
       const next = computeNextReminderAtUtc({
         nowUtc: now,
         tzOffsetMinutes,
-        times,
+        morningHour: settings.morningHour,
+        eveningHour: settings.eveningHour,
       });
-
       nextReminderAt = next ? next.toISOString() : null;
     }
 
@@ -123,10 +95,7 @@ export async function GET(req: Request) {
       dayEndUtc: endUtc.toISOString(),
       count: agg?.count ?? 0,
       energyAvg: agg?.energyAvg ?? null,
-      painAvg: agg?.painAvg ?? null,
-      lastCheckIn: last[0]
-        ? { createdAt: last[0].createdAt.toISOString() }
-        : null,
+      lastCheckIn: last[0] ? { createdAt: last[0].createdAt.toISOString() } : null,
       nextReminderAt,
       target,
     };

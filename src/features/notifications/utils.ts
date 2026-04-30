@@ -1,119 +1,21 @@
 import { db } from "@/db";
 import { notificationSettings } from "@/db/schema/notificationSettings";
 import { eq } from "drizzle-orm";
-import { DEFAULT_TWICE_DAILY } from "./constants";
+import { DEFAULT_EVENING_HOUR, DEFAULT_MORNING_HOUR } from "./constants";
 import type {
-  NotificationFrequency,
-  NotificationSettings,
-  NotificationTime,
-  UnknownRecord,
-  UpdateNotificationSettings,
+  NotificationPreferences,
+  UpdateNotificationPreferences,
 } from "./types";
 
-export function defaultNotificationSettings(): NotificationSettings {
+export function defaultNotificationPreferences(): NotificationPreferences {
   return {
-    enabled: false,
-    checkIns: {
-      schedule: {
-        frequency: "twice_daily",
-        times: DEFAULT_TWICE_DAILY,
-      },
-    },
-    delivery: { sound: false, vibration: false },
-    digest: { enabled: false, cadence: "weekly" },
+    morningHour: DEFAULT_MORNING_HOUR,
+    eveningHour: DEFAULT_EVENING_HOUR,
   };
 }
 
-export function validateTime(time: NotificationTime) {
-  return (
-    Number.isInteger(time.hour) &&
-    Number.isInteger(time.minute) &&
-    time.hour >= 0 &&
-    time.hour <= 23 &&
-    time.minute >= 0 &&
-    time.minute <= 59
-  );
-}
-
-export function isValidTime(value: unknown): value is NotificationTime {
-  if (!isRecord(value)) return false;
-
-  const hour = getNested(value, "hour");
-  const minute = getNested(value, "minute");
-
-  return (
-    Number.isInteger(hour) &&
-    Number.isInteger(minute) &&
-    (hour as number) >= 0 &&
-    (hour as number) <= 23 &&
-    (minute as number) >= 0 &&
-    (minute as number) <= 59
-  );
-}
-
-/**
- * Normalizes a schedule-like object into a concrete schedule.
- * - Accepts either the schedule itself, or a larger settings object that contains it.
- * - If frequency is "twice_daily" but times are missing, defaults are injected.
- */
-export function normalizeSchedule(input: unknown): {
-  frequency: NotificationFrequency;
-  times: NotificationTime[];
-} {
-  const scheduleLike = extractScheduleLike(input);
-
-  const scheduleObj = isRecord(scheduleLike) ? scheduleLike : null;
-
-  const frequency = parseFrequency(
-    scheduleObj ? getNested(scheduleObj, "frequency") : null,
-  );
-
-  const rawTimes = scheduleObj ? getNested(scheduleObj, "times") : null;
-  const timesFromInput = Array.isArray(rawTimes)
-    ? rawTimes.filter(isValidTime)
-    : [];
-
-  // If twice_daily but times missing, provide defaults
-  if (frequency === "twice_daily") {
-    return {
-      frequency,
-      times: timesFromInput.length ? timesFromInput : DEFAULT_TWICE_DAILY,
-    };
-  }
-
-  // custom: use whatever they configured (may be empty)
-  return { frequency, times: timesFromInput };
-}
-
-/**
- * Normalize a schedule PATCH payload into a server-safe schedule.
- *
- * Key rule:
- * - frequency="twice_daily" => ensure defaults if times missing/empty
- * - frequency="custom"      => allow empty times (user can choose none)
- */
-export function normalizeScheduleUpdate(input: {
-  frequency?: NotificationFrequency;
-  times?: NotificationTime[];
-}): { frequency: NotificationFrequency; times: NotificationTime[] } {
-  const frequency: NotificationFrequency =
-    input.frequency === "custom" ? "custom" : "twice_daily";
-
-  const rawTimes = input.times ?? [];
-  const times = Array.isArray(rawTimes)
-    ? sortTimes(rawTimes.filter(validateTime))
-    : [];
-
-  if (frequency === "twice_daily") {
-    // If twice_daily but times missing, provide defaults
-    return {
-      frequency,
-      times: times.length ? times : DEFAULT_TWICE_DAILY,
-    };
-  }
-
-  // custom: use whatever they configured (may be empty)
-  return { frequency, times };
+export function validateHour(hour: unknown): hour is number {
+  return Number.isInteger(hour) && (hour as number) >= 0 && (hour as number) <= 23;
 }
 
 export async function getOrCreateSettingsRow(userId: string) {
@@ -125,13 +27,13 @@ export async function getOrCreateSettingsRow(userId: string) {
 
   if (existing[0]) return existing[0];
 
-  const defaults = defaultNotificationSettings();
+  const defaults = defaultNotificationPreferences();
 
   const inserted = await db
     .insert(notificationSettings)
     .values({
       userId,
-      enabled: defaults.enabled,
+      enabled: false,
       settings: defaults,
       createdAt: new Date(),
       updatedAt: new Date(),
@@ -141,127 +43,50 @@ export async function getOrCreateSettingsRow(userId: string) {
   return inserted[0];
 }
 
-/**
- * Merge partial updates into current settings, server-authoritative.
- * Also enforces: if enabled === false => delivery + digest disabled (but we keep schedule).
- */
-export function mergeSettings(
-  current: NotificationSettings,
-  updates: UpdateNotificationSettings,
-): NotificationSettings {
-  const next: NotificationSettings = {
-    enabled: updates.enabled ?? current.enabled,
+export function mergePreferences(
+  current: NotificationPreferences,
+  updates: UpdateNotificationPreferences,
+): NotificationPreferences {
+  const morningHour = updates.morningHour ?? current.morningHour;
+  const eveningHour = updates.eveningHour ?? current.eveningHour;
 
-    checkIns: {
-      schedule: {
-        ...current.checkIns.schedule,
-      },
-    },
+  if (!validateHour(morningHour)) throw new Error("INVALID_MORNING_HOUR");
+  if (!validateHour(eveningHour)) throw new Error("INVALID_EVENING_HOUR");
 
-    delivery: {
-      ...current.delivery,
-      ...(updates.delivery ?? {}),
-    },
-
-    digest: {
-      ...current.digest,
-      ...(updates.digest ?? {}),
-    },
-  };
-
-  // schedule update (validated/normalized)
-  if (updates.checkIns?.schedule) {
-    const normalized = normalizeScheduleUpdate({
-      frequency: updates.checkIns.schedule.frequency,
-      times: updates.checkIns.schedule.times,
-    });
-
-    next.checkIns.schedule = normalized;
-  }
-
-  // enforce master switch
-  if (next.enabled === false) {
-    next.delivery.sound = false;
-    next.delivery.vibration = false;
-    next.digest.enabled = false;
-  }
-
-  return next;
+  return { morningHour, eveningHour };
 }
 
 export function computeNextReminderAtUtc(opts: {
   nowUtc: Date;
-  tzOffsetMinutes: number; // JS getTimezoneOffset() convention
-  times: NotificationTime[];
+  tzOffsetMinutes: number;
+  morningHour: number;
+  eveningHour: number;
 }): Date | null {
-  const { nowUtc, tzOffsetMinutes } = opts;
-  const times = [...opts.times].sort((a, b) =>
-    a.hour !== b.hour ? a.hour - b.hour : a.minute - b.minute,
-  );
+  const { nowUtc, tzOffsetMinutes, morningHour, eveningHour } = opts;
 
-  if (times.length === 0) return null;
+  const times = [
+    { hour: morningHour, minute: 0 },
+    { hour: eveningHour, minute: 0 },
+  ].sort((a, b) => a.hour - b.hour);
 
   // Convert now into "local-frame" time by subtracting offset minutes
   const nowLocalFrame = new Date(nowUtc.getTime() - tzOffsetMinutes * 60_000);
 
-  // Build local "today" components in UTC fields (because we're using a shifted frame)
   const y = nowLocalFrame.getUTCFullYear();
   const m = nowLocalFrame.getUTCMonth();
   const d = nowLocalFrame.getUTCDate();
 
-  // Find next scheduled time today (in local-frame)
   for (const t of times) {
     const candidateLocal = new Date(Date.UTC(y, m, d, t.hour, t.minute, 0, 0));
     if (candidateLocal.getTime() > nowLocalFrame.getTime()) {
-      // Convert candidate back to UTC
       return new Date(candidateLocal.getTime() + tzOffsetMinutes * 60_000);
     }
   }
 
-  // Otherwise tomorrow at earliest time
-  const first = times[0];
+  // All times passed today — return first slot tomorrow
+  const first = times[0]!;
   const tomorrowLocal = new Date(
     Date.UTC(y, m, d + 1, first.hour, first.minute, 0, 0),
   );
   return new Date(tomorrowLocal.getTime() + tzOffsetMinutes * 60_000);
-}
-
-function isRecord(value: unknown): value is UnknownRecord {
-  return typeof value === "object" && value !== null;
-}
-
-function getNested(obj: UnknownRecord, key: string): unknown {
-  return obj[key];
-}
-
-function parseFrequency(value: unknown): NotificationFrequency {
-  return value === "custom" ? "custom" : "twice_daily";
-}
-
-function extractScheduleLike(input: unknown): unknown {
-  // Handle both shapes (your settings JSON may be nested depending on migrations/seed)
-  if (!isRecord(input)) return null;
-
-  const checkIns = getNested(input, "checkIns");
-  if (isRecord(checkIns)) {
-    const schedule = getNested(checkIns, "schedule");
-    if (schedule != null) return schedule;
-  }
-
-  const maybeSettings = getNested(input, "settings");
-  if (isRecord(maybeSettings)) {
-    const nestedCheckIns = getNested(maybeSettings, "checkIns");
-    if (isRecord(nestedCheckIns)) {
-      const nestedSchedule = getNested(nestedCheckIns, "schedule");
-      if (nestedSchedule != null) return nestedSchedule;
-    }
-  }
-
-  return null;
-}
-
-function sortTimes(times: NotificationTime[]) {
-  return [...times].sort((a, b) =>
-    a.hour !== b.hour ? a.hour - b.hour : a.minute - b.minute,
-  );
 }

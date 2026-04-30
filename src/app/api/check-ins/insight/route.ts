@@ -10,15 +10,6 @@ import { parseIntParam } from "@/utils/parseIntParam";
 
 type InsightApi = { message: string | null };
 
-// assumes checkInEntries has influencedBy/tags column you store (array/json)
-// adjust field name to match your schema
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
-function extractTags(row: any): string[] {
-  const raw = row.influencedBy ?? row.tags ?? [];
-  if (Array.isArray(raw)) return raw.map(String);
-  return [];
-}
-
 export async function GET(req: Request) {
   try {
     const clerkUserId = await requireClerkUserId();
@@ -26,7 +17,7 @@ export async function GET(req: Request) {
     if (!user) return jsonError(404, "User not found");
 
     const url = new URL(req.url);
-    parseIntParam(url.searchParams.get("tzOffsetMinutes"), 0); // optional for future use
+    parseIntParam(url.searchParams.get("tzOffsetMinutes"), 0);
 
     const rangeDays = Math.min(
       90,
@@ -39,7 +30,7 @@ export async function GET(req: Request) {
     const rows = await db
       .select({
         energyLevel: checkInEntries.energyLevel,
-        influencedBy: checkInEntries.influencedBy,
+        symptoms: checkInEntries.symptoms,
       })
       .from(checkInEntries)
       .where(
@@ -54,16 +45,14 @@ export async function GET(req: Request) {
       return NextResponse.json({ success: true, data });
     }
 
-    // tag -> { sumEnergy, count }
     const agg = new Map<string, { sum: number; count: number }>();
 
     for (const row of rows) {
       const energy = Number(row.energyLevel);
       if (!Number.isFinite(energy)) continue;
 
-      const tags = extractTags(row);
-      for (const tag of tags) {
-        const key = tag.trim();
+      for (const symptom of row.symptoms ?? []) {
+        const key = symptom.trim();
         if (!key) continue;
 
         const cur = agg.get(key) ?? { sum: 0, count: 0 };
@@ -74,23 +63,23 @@ export async function GET(req: Request) {
     }
 
     const candidates = [...agg.entries()]
-      .filter(([, value]) => value.count >= 3) // avoid noisy singletons
-      .map(([tag, value]) => ({
-        tag,
+      .filter(([, value]) => value.count >= 3)
+      .map(([symptom, value]) => ({
+        symptom,
         avg: value.sum / value.count,
         count: value.count,
       }))
-      .sort((a, b) => b.avg - a.avg);
+      .sort((a, b) => a.avg - b.avg); // lowest energy first (symptoms correlate with low energy)
 
     if (candidates.length === 0) {
       const data: InsightApi = { message: null };
       return NextResponse.json({ success: true, data });
     }
 
-    const best = candidates[0];
+    const worst = candidates[0]!;
 
     const data: InsightApi = {
-      message: `Your energy tends to be higher when you tag “${best.tag}”. Consider repeating that routine.`,
+      message: `Your energy tends to be lower on days with "${worst.symptom}". Consider pacing more on those days.`,
     };
 
     return NextResponse.json({ success: true, data });

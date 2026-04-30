@@ -20,11 +20,11 @@ export async function GET(req: Request) {
     const rows = await db
       .select({
         id: checkInEntries.id,
+        checkInDate: checkInEntries.checkInDate,
         createdAt: checkInEntries.createdAt,
         energyLevel: checkInEntries.energyLevel,
-        painLevel: checkInEntries.painLevel,
-        influencedBy: checkInEntries.influencedBy,
-        note: checkInEntries.note,
+        symptoms: checkInEntries.symptoms,
+        notes: checkInEntries.notes,
       })
       .from(checkInEntries)
       .where(eq(checkInEntries.userId, user.id))
@@ -35,11 +35,11 @@ export async function GET(req: Request) {
       success: true,
       data: rows.map((r) => ({
         id: r.id,
+        checkInDate: r.checkInDate ?? null,
         createdAt: r.createdAt.toISOString(),
         energyLevel: Number(r.energyLevel),
-        painLevel: Number(r.painLevel),
-        influencedBy: (r.influencedBy ?? []) as string[],
-        note: r.note ?? null,
+        symptoms: r.symptoms ?? [],
+        notes: r.notes ?? null,
       })),
     });
   } catch (err: any) {

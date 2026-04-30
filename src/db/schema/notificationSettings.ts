@@ -10,18 +10,8 @@ export const notificationSettings = pgTable("notification_settings", {
 
   enabled: boolean("enabled").notNull().default(true),
 
-  // JSONB allows future expansion without migrations every time
   settings: jsonb("settings")
-    .$type<{
-      checkIns: {
-        schedule: {
-          frequency: "twice_daily" | "custom";
-          times: { hour: number; minute: number }[];
-        };
-      };
-      delivery: { sound: boolean; vibration: boolean };
-      digest: { enabled: boolean; cadence: "weekly" };
-    }>()
+    .$type<{ morningHour: number; eveningHour: number }>()
     .notNull(),
 
   createdAt: timestamp("created_at", { withTimezone: true })
