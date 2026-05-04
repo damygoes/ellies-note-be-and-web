@@ -80,12 +80,15 @@ export async function GET(req: Request) {
     const target = 2;
 
     if (notificationRow[0]?.enabled) {
-      const settings = notificationRow[0].settings;
+      const settings = notificationRow[0].settings as {
+        morningMinute: number;
+        eveningMinute: number;
+      };
       const next = computeNextReminderAtUtc({
         nowUtc: now,
         tzOffsetMinutes,
-        morningHour: settings.morningHour,
-        eveningHour: settings.eveningHour,
+        morningMinute: settings.morningMinute ?? 540,
+        eveningMinute: settings.eveningMinute ?? 1200,
       });
       nextReminderAt = next ? next.toISOString() : null;
     }

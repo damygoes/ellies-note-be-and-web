@@ -7,8 +7,6 @@ import { verifySignatureAppRouter } from "@upstash/qstash/nextjs";
 import { eq } from "drizzle-orm";
 import { NextResponse } from "next/server";
 
-type ScheduleTime = { hour: number; minute: number };
-
 type SendArgs = {
   title: string;
   body: string;
@@ -70,13 +68,13 @@ export const POST = verifySignatureAppRouter(async (_req: Request) => {
       const timezone = row.timezone ?? "";
       if (!timezone) continue;
 
-      const { morningHour, eveningHour } = row.settings;
-      const times: ScheduleTime[] = [
-        { hour: morningHour, minute: 0 },
-        { hour: eveningHour, minute: 0 },
-      ];
+      const { morningMinute, eveningMinute } = row.settings as {
+        morningMinute: number;
+        eveningMinute: number;
+      };
+      const slots = [morningMinute, eveningMinute];
 
-      const due = getDueSlotMinute({ now, timezone, times, windowMinutes: 1 });
+      const due = getDueSlotMinute({ now, timezone, slots, windowMinutes: 1 });
       if (!due) continue;
 
       try {
@@ -105,10 +103,6 @@ export const POST = verifySignatureAppRouter(async (_req: Request) => {
     return NextResponse.json({ success: false }, { status: 500 });
   }
 });
-
-function minuteOfDay(t: ScheduleTime) {
-  return t.hour * 60 + t.minute;
-}
 
 function getLocalParts(now: Date, timezone: string) {
   const dtf = new Intl.DateTimeFormat("en-CA", {
@@ -143,19 +137,19 @@ function getLocalParts(now: Date, timezone: string) {
 function getDueSlotMinute({
   now,
   timezone,
-  times,
+  slots,
   windowMinutes = 3,
 }: {
   now: Date;
   timezone: string;
-  times: ScheduleTime[];
+  slots: number[]; // minute-of-day values
   windowMinutes?: number;
 }): { localDate: string; minuteOfDay: number } | null {
   const { localDate, localMinuteOfDay } = getLocalParts(now, timezone);
 
-  const slots = times.map(minuteOfDay).sort((a, b) => a - b);
+  const sorted = [...slots].sort((a, b) => a - b);
 
-  for (const slot of slots) {
+  for (const slot of sorted) {
     if (localMinuteOfDay >= slot && localMinuteOfDay < slot + windowMinutes) {
       return { localDate, minuteOfDay: slot };
     }

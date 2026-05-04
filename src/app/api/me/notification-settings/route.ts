@@ -6,7 +6,7 @@ import { notificationSettings } from "@/db/schema/notificationSettings";
 import {
   getOrCreateSettingsRow,
   mergePreferences,
-  validateHour,
+  validateMinuteOfDay,
 } from "@/features/notifications/utils";
 import { requireClerkUserId } from "@/lib/serverAuth";
 import { getAppUserByClerkId } from "@/utils/getAppUserIdByClerkId";
@@ -24,8 +24,8 @@ export async function GET() {
       success: true,
       data: {
         enabled: row.enabled,
-        morningHour: row.settings.morningHour,
-        eveningHour: row.settings.eveningHour,
+        morningMinute: row.settings.morningMinute,
+        eveningMinute: row.settings.eveningMinute,
       },
     });
   } catch (err: unknown) {
@@ -42,21 +42,18 @@ export async function PUT(req: Request) {
     const user = await getAppUserByClerkId(clerkUserId);
     if (!user) return jsonError(404, "User not found");
 
-    const body: { enabled?: boolean; morningHour?: number; eveningHour?: number } =
-      await req.json();
+    const body: {
+      enabled?: boolean;
+      morningMinute?: number;
+      eveningMinute?: number;
+    } = await req.json();
 
-    if (
-      body.morningHour !== undefined &&
-      !validateHour(body.morningHour)
-    ) {
-      return jsonError(400, "morningHour must be an integer between 0 and 23");
+    if (body.morningMinute !== undefined && !validateMinuteOfDay(body.morningMinute)) {
+      return jsonError(400, "morningMinute must be an integer between 0 and 1439");
     }
 
-    if (
-      body.eveningHour !== undefined &&
-      !validateHour(body.eveningHour)
-    ) {
-      return jsonError(400, "eveningHour must be an integer between 0 and 23");
+    if (body.eveningMinute !== undefined && !validateMinuteOfDay(body.eveningMinute)) {
+      return jsonError(400, "eveningMinute must be an integer between 0 and 1439");
     }
 
     const row = await getOrCreateSettingsRow(user.id);
@@ -64,12 +61,12 @@ export async function PUT(req: Request) {
     let nextPreferences = row.settings;
     try {
       nextPreferences = mergePreferences(row.settings, {
-        morningHour: body.morningHour,
-        eveningHour: body.eveningHour,
+        morningMinute: body.morningMinute,
+        eveningMinute: body.eveningMinute,
       });
     } catch (error: unknown) {
       if (error instanceof Error) {
-        return jsonError(400, "Invalid hour value");
+        return jsonError(400, "Invalid minute value");
       }
       throw error;
     }
@@ -87,8 +84,8 @@ export async function PUT(req: Request) {
       success: true,
       data: {
         enabled: saved.enabled,
-        morningHour: saved.settings.morningHour,
-        eveningHour: saved.settings.eveningHour,
+        morningMinute: saved.settings.morningMinute,
+        eveningMinute: saved.settings.eveningMinute,
       },
     });
   } catch (err: unknown) {

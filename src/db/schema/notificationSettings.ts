@@ -11,7 +11,7 @@ export const notificationSettings = pgTable("notification_settings", {
   enabled: boolean("enabled").notNull().default(true),
 
   settings: jsonb("settings")
-    .$type<{ morningHour: number; eveningHour: number }>()
+    .$type<{ morningMinute: number; eveningMinute: number }>()
     .notNull(),
 
   createdAt: timestamp("created_at", { withTimezone: true })
