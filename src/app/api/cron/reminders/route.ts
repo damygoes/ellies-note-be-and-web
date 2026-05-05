@@ -88,10 +88,16 @@ export const POST = verifySignatureAppRouter(async (_req: Request) => {
         continue;
       }
 
+      const isMorning = due.minuteOfDay < 12 * 60;
       await sendExpoPush(row.expoPushToken, {
-        title: "Time for a check-in",
-        body: "A 30-second check-in helps spot patterns.",
-        data: { kind: "check_in_reminder" },
+        title: isMorning ? "Morning check-in" : "Evening check-in",
+        body: isMorning
+          ? "How are you feeling this morning? A quick log helps spot patterns."
+          : "How was your energy today? Take a moment to log your check-in.",
+        data: {
+          kind: "check_in_reminder",
+          url: "/(app)/(protected)/(tabs)/log",
+        },
       });
 
       sentCount += 1;
