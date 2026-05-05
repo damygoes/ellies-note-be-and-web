@@ -140,6 +140,35 @@ export async function POST(req: Request) {
       }
     }
 
+    // Upsert by (userId, checkInDate) when a date is provided
+    if (checkInDate) {
+      const [existing] = await db
+        .select({ id: checkInEntries.id })
+        .from(checkInEntries)
+        .where(
+          and(
+            eq(checkInEntries.userId, user.id),
+            eq(checkInEntries.checkInDate, checkInDate),
+          ),
+        )
+        .limit(1);
+
+      if (existing) {
+        const [updated] = await db
+          .update(checkInEntries)
+          .set({
+            energyLevel,
+            symptoms: validSymptoms,
+            notes: notes ?? null,
+            createdAt: createdAtDate ?? new Date(),
+          })
+          .where(eq(checkInEntries.id, existing.id))
+          .returning();
+
+        return NextResponse.json({ success: true, data: updated });
+      }
+    }
+
     const inserted = await db
       .insert(checkInEntries)
       .values({

@@ -17,6 +17,7 @@ async function sendExpoPush(expoPushToken: string, payload: SendArgs) {
   const message = {
     to: expoPushToken,
     sound: "default",
+    priority: "high",
     title: payload.title,
     body: payload.body,
     data: payload.data ?? {},
@@ -74,7 +75,7 @@ export const POST = verifySignatureAppRouter(async (_req: Request) => {
       };
       const slots = [morningMinute, eveningMinute];
 
-      const due = getDueSlotMinute({ now, timezone, slots, windowMinutes: 1 });
+      const due = getDueSlotMinute({ now, timezone, slots, windowMinutes: 3 });
       if (!due) continue;
 
       try {
