@@ -1,4 +1,4 @@
-import { desc, eq } from "drizzle-orm";
+import { and, desc, eq, lt } from "drizzle-orm";
 import { NextResponse } from "next/server";
 
 import { db } from "@/db";
@@ -6,7 +6,9 @@ import { checkInEntries } from "@/db/schema/checkInEntry";
 import { requireClerkUserId } from "@/lib/serverAuth";
 import { getAppUserByClerkId } from "@/utils/getAppUserIdByClerkId";
 import { jsonError } from "@/utils/jsonError";
-import { parseLimit } from "@/utils/parseLimit";
+import { parseIntParam } from "@/utils/parseIntParam";
+
+const PAGE_SIZE = 30;
 
 export async function GET(req: Request) {
   try {
@@ -15,7 +17,18 @@ export async function GET(req: Request) {
     if (!user) return jsonError(404, "User not found");
 
     const url = new URL(req.url);
-    const limit = parseLimit(url);
+    const limit = Math.min(
+      100,
+      Math.max(1, parseIntParam(url.searchParams.get("limit"), PAGE_SIZE)),
+    );
+
+    const cursorRaw = url.searchParams.get("cursor");
+    const cursor = cursorRaw ? new Date(cursorRaw) : null;
+
+    const where = and(
+      eq(checkInEntries.userId, user.id),
+      cursor ? lt(checkInEntries.createdAt, cursor) : undefined,
+    );
 
     const rows = await db
       .select({
@@ -27,13 +40,19 @@ export async function GET(req: Request) {
         notes: checkInEntries.notes,
       })
       .from(checkInEntries)
-      .where(eq(checkInEntries.userId, user.id))
+      .where(where)
       .orderBy(desc(checkInEntries.createdAt))
-      .limit(limit);
+      .limit(limit + 1);
+
+    const hasMore = rows.length > limit;
+    const data = rows.slice(0, limit);
+    const nextCursor = hasMore
+      ? data[data.length - 1]!.createdAt.toISOString()
+      : null;
 
     return NextResponse.json({
       success: true,
-      data: rows.map((r) => ({
+      data: data.map((r) => ({
         id: r.id,
         checkInDate: r.checkInDate ?? null,
         createdAt: r.createdAt.toISOString(),
@@ -41,6 +60,7 @@ export async function GET(req: Request) {
         symptoms: r.symptoms ?? [],
         notes: r.notes ?? null,
       })),
+      meta: { hasMore, nextCursor },
     });
   } catch (err: any) {
     console.error("[api/check-ins/recent GET] ERROR:", err);

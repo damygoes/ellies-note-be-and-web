@@ -10,13 +10,6 @@ import { getAppUserByClerkId } from "@/utils/getAppUserIdByClerkId";
 import { jsonError } from "@/utils/jsonError";
 import { parseIntParam } from "@/utils/parseIntParam";
 
-type Bucket = "day" | "week" | "month";
-
-function parseBucket(v: string | null): Bucket {
-  if (v === "week" || v === "month" || v === "day") return v;
-  return "day";
-}
-
 export async function GET(req: Request) {
   try {
     const clerkUserId = await requireClerkUserId();
@@ -28,7 +21,6 @@ export async function GET(req: Request) {
       url.searchParams.get("tzOffsetMinutes"),
       0,
     );
-    const bucket = parseBucket(url.searchParams.get("bucket"));
 
     const rangeDaysRaw = parseIntParam(url.searchParams.get("range"), 7);
     const rangeDays = Math.min(365, Math.max(1, rangeDaysRaw));
@@ -39,21 +31,10 @@ export async function GET(req: Request) {
 
     const tzParam = sql.param(tzOffsetMinutes);
     const shifted = sql`(${checkInEntries.createdAt} - (${tzParam} * interval '1 minute'))`;
-
     const dayKeyExpr = sql<string>`(${shifted}::date)::text`.as("dayKey");
 
-    const bucketStartExpr =
-      bucket === "month"
-        ? sql`date_trunc('month', ${shifted})`
-        : bucket === "week"
-          ? sql`date_trunc('week', ${shifted})`
-          : sql`date_trunc('day', ${shifted})`;
-
-    const bucketStart = bucketStartExpr.as("bucketStart");
-
-    const base = db
+    const rows = await db
       .select({
-        bucketStart,
         dayKey: dayKeyExpr,
         energyLevel: checkInEntries.energyLevel,
       })
@@ -65,56 +46,34 @@ export async function GET(req: Request) {
           lt(checkInEntries.createdAt, endUtc),
         ),
       )
-      .as("base");
+      .orderBy(checkInEntries.createdAt);
 
-    const rows = await db
-      .select({
-        bucketStart: base.bucketStart,
-        dayKey: base.dayKey,
-        count: sql<number>`count(*)`,
-        energyAvg: sql<number | null>`avg(${base.energyLevel})`,
-      })
-      .from(base)
-      .groupBy(base.bucketStart, base.dayKey)
-      .orderBy(base.bucketStart);
-
-    const series = rows.map((row) => ({
-      bucketStart: new Date(row.bucketStart as unknown as Date).toISOString(),
-      dayKey: row.dayKey,
-      count: row.count,
-      energyAvg: row.energyAvg,
-    }));
-
-    if (bucket === "day") {
-      const map = new Map<string, (typeof series)[number]>();
-      for (const s of series) map.set(s.dayKey, s);
-
-      const filled: (typeof series)[number][] = [];
-      for (let i = 0; i < rangeDays; i++) {
-        const dUtc = addDaysUtc(startUtc, i);
-        const local = new Date(dUtc.getTime() - tzOffsetMinutes * 60_000);
-        const dayKey = local.toISOString().slice(0, 10);
-
-        const existing = map.get(dayKey);
-        filled.push(
-          existing ?? {
-            bucketStart: dUtc.toISOString(),
-            dayKey,
-            count: 0,
-            energyAvg: null,
-          },
-        );
-      }
-
-      return NextResponse.json({
-        success: true,
-        data: { bucket, rangeDays, startUtc: startUtc.toISOString(), endUtc: endUtc.toISOString(), series: filled },
-      });
+    // Build ordered days array and index map
+    const days: string[] = [];
+    for (let i = 0; i < rangeDays; i++) {
+      const dUtc = addDaysUtc(startUtc, i);
+      const local = new Date(dUtc.getTime() - tzOffsetMinutes * 60_000);
+      days.push(local.toISOString().slice(0, 10));
     }
+    const dayIndexMap = new Map(days.map((d, i) => [d, i]));
+
+    const entries = rows
+      .filter((r) => dayIndexMap.has(r.dayKey))
+      .map((r) => ({
+        dayKey: r.dayKey,
+        dayIndex: dayIndexMap.get(r.dayKey)!,
+        energyLevel: Number(r.energyLevel),
+      }));
 
     return NextResponse.json({
       success: true,
-      data: { bucket, rangeDays, startUtc: startUtc.toISOString(), endUtc: endUtc.toISOString(), series },
+      data: {
+        rangeDays,
+        startUtc: startUtc.toISOString(),
+        endUtc: endUtc.toISOString(),
+        days,
+        entries,
+      },
     });
   } catch (err: any) {
     console.error("[api/check-ins/stats GET] ERROR:", err);
