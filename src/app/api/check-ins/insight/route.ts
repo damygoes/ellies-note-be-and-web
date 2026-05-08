@@ -62,6 +62,13 @@ export async function GET(req: Request) {
     const user = await getAppUserByClerkId(clerkUserId);
     if (!user) return jsonError(404, "User not found");
 
+    if (user.subscriptionStatus !== "premium") {
+      return NextResponse.json({
+        success: true,
+        data: { insights: [], message: null },
+      });
+    }
+
     const url = new URL(req.url);
     const rangeDays = Math.min(
       90,
