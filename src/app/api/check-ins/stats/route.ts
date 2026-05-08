@@ -32,7 +32,10 @@ export async function GET(req: Request) {
 
     const tzParam = sql.param(tzOffsetMinutes);
     const shifted = sql`(${checkInEntries.createdAt} - (${tzParam} * interval '1 minute'))`;
-    const dayKeyExpr = sql<string>`(${shifted}::date)::text`.as("dayKey");
+    const dayKeyExpr = sql<string>`COALESCE(
+      ${checkInEntries.checkInDate}::text,
+      (${shifted}::date)::text
+    )`.as("dayKey");
 
     const rows = await db
       .select({
