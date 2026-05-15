@@ -10,6 +10,7 @@ export default withSentryConfig(nextConfig, {
   project: "elliesnote-web",
   silent: !process.env.CI,
   widenClientFileUpload: true,
-  disableLogger: true,
-  automaticVercelMonitors: true,
+  webpack: {
+    treeshake: { removeDebugLogging: true },
+  },
 });
