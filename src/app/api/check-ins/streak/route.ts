@@ -50,10 +50,13 @@ export async function GET(req: Request) {
     );
 
     const todayKey = getLocalTodayDateKey(new Date(), tzOffsetMinutes);
+    // If the user hasn't logged today yet, the streak is still alive —
+    // count from yesterday so it doesn't reset mid-day.
+    const startKey = set.has(todayKey) ? todayKey : addLocalDays(todayKey, -1);
 
     let streak = 0;
     for (;;) {
-      const expected = addLocalDays(todayKey, -streak);
+      const expected = addLocalDays(startKey, -streak);
       if (!set.has(expected)) break;
       streak += 1;
     }

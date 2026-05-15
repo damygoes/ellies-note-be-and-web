@@ -4,10 +4,8 @@ import { pushTokens } from "@/db/schema/pushTokens";
 import { reminderSends } from "@/db/schema/reminderSends";
 import { users } from "@/db/schema/user";
 import { verifySignatureAppRouter } from "@upstash/qstash/nextjs";
-import { eq } from "drizzle-orm";
+import { desc, eq } from "drizzle-orm";
 import { NextResponse } from "next/server";
-
-type ScheduleTime = { hour: number; minute: number };
 
 type SendArgs = {
   title: string;
@@ -19,6 +17,7 @@ async function sendExpoPush(expoPushToken: string, payload: SendArgs) {
   const message = {
     to: expoPushToken,
     sound: "default",
+    priority: "high",
     title: payload.title,
     body: payload.body,
     data: payload.data ?? {},
@@ -36,98 +35,176 @@ async function sendExpoPush(expoPushToken: string, payload: SendArgs) {
 
   const json = await res.json().catch(() => null);
 
-  // Expo returns 200 even for some token errors; check payload for status
   if (!res.ok) {
     throw new Error(`Expo push failed: ${res.status}`);
   }
 
-  // If desired: handle "DeviceNotRegistered" by deleting the token row later.
+  if (json?.data?.status === "error") {
+    console.warn("[sendExpoPush] Expo ticket error:", json.data);
+  } else {
+    console.log("[sendExpoPush] Ticket OK:", json?.data);
+  }
+
   return json;
+}
+
+async function runReminderNotifications() {
+  const now = new Date();
+  console.log("[cron/reminders] Running at", now.toISOString());
+
+  // DISTINCT ON users.id ordered by most-recent token ensures we send to the
+  // newest registered token even if stale rows exist from prior installs.
+  const rows = await db
+    .selectDistinctOn([users.id], {
+      userId: users.id,
+      timezone: users.timezone,
+      expoPushToken: pushTokens.expoPushToken,
+      settings: notificationSettings.settings,
+    })
+    .from(users)
+    .innerJoin(
+      notificationSettings,
+      eq(notificationSettings.userId, users.id),
+    )
+    .innerJoin(pushTokens, eq(pushTokens.userId, users.id))
+    .where(eq(notificationSettings.enabled, true))
+    .orderBy(users.id, desc(pushTokens.updatedAt));
+
+  console.log(`[cron/reminders] Eligible users with tokens: ${rows.length}`);
+
+  if (rows.length === 0) {
+    console.log(
+      "[cron/reminders] No eligible users — check that notification_settings.enabled=true and push_tokens row exists",
+    );
+  }
+
+  let sentCount = 0;
+
+  for (const row of rows) {
+    const timezone = row.timezone ?? "";
+    console.log(
+      `[cron/reminders] User ${row.userId} | timezone="${timezone}" | token="${row.expoPushToken.slice(0, 30)}..."`,
+    );
+
+    if (!timezone) {
+      console.log(`[cron/reminders]   ↳ Skipped — no timezone set`);
+      continue;
+    }
+
+    const { morningMinute, eveningMinute } = row.settings as {
+      morningMinute: number;
+      eveningMinute: number;
+    };
+    console.log(
+      `[cron/reminders]   Settings: morningMinute=${morningMinute} (${minuteToTime(morningMinute)}), eveningMinute=${eveningMinute} (${minuteToTime(eveningMinute)})`,
+    );
+
+    const slots = [morningMinute, eveningMinute];
+    const due = getDueSlotMinute({ now, timezone, slots, windowMinutes: 3 });
+
+    if (!due) {
+      let localMinute: number | undefined;
+      try {
+        const parts = getLocalParts(now, timezone);
+        localMinute = parts.localMinuteOfDay;
+      } catch {
+        // ignore
+      }
+      console.log(
+        `[cron/reminders]   ↳ Not in window. Local time: ${localMinute !== undefined ? minuteToTime(localMinute) : "unknown"} — slots fire at ${slots.map(minuteToTime).join(", ")} (±3 min)`,
+      );
+      continue;
+    }
+
+    console.log(
+      `[cron/reminders]   ↳ Due slot: ${minuteToTime(due.minuteOfDay)} on ${due.localDate}`,
+    );
+
+    try {
+      await db.insert(reminderSends).values({
+        userId: row.userId,
+        localDate: due.localDate,
+        minuteOfDay: due.minuteOfDay,
+      });
+    } catch {
+      console.log(
+        `[cron/reminders]   ↳ Skipped — already sent for ${due.localDate} at minute ${due.minuteOfDay}`,
+      );
+      continue;
+    }
+
+    const isMorning = due.minuteOfDay < 12 * 60;
+    console.log(
+      `[cron/reminders]   ↳ Sending ${isMorning ? "morning" : "evening"} notification...`,
+    );
+
+    await sendExpoPush(row.expoPushToken, {
+      title: isMorning ? "Morning check-in" : "Evening check-in",
+      body: isMorning
+        ? "How are you feeling this morning? A quick log helps spot patterns."
+        : "How was your energy today? Take a moment to log your check-in.",
+      data: {
+        kind: "check_in_reminder",
+        url: "/(app)/(protected)/(tabs)/log",
+      },
+    });
+
+    sentCount += 1;
+    console.log(`[cron/reminders]   ↳ Sent OK`);
+  }
+
+  console.log(`[cron/reminders] Done. sentCount=${sentCount}`);
+  return { sentCount };
 }
 
 // QStash-only handler
 // eslint-disable-next-line @typescript-eslint/no-unused-vars
 export const POST = verifySignatureAppRouter(async (_req: Request) => {
   try {
-    const now = new Date();
-
-    const rows = await db
-      .select({
-        userId: users.id,
-        timezone: users.timezone,
-        expoPushToken: pushTokens.expoPushToken,
-        settings: notificationSettings.settings,
-      })
-      .from(users)
-      .innerJoin(
-        notificationSettings,
-        eq(notificationSettings.userId, users.id),
-      )
-      .innerJoin(pushTokens, eq(pushTokens.userId, users.id))
-      .where(eq(notificationSettings.enabled, true));
-
-    let sentCount = 0;
-
-    for (const row of rows) {
-      const timezone = row.timezone ?? "";
-      if (!timezone) continue;
-
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      const schedule = (row.settings as any)?.checkIns?.schedule;
-      const times: ScheduleTime[] = schedule?.times ?? [];
-      if (!Array.isArray(times) || times.length === 0) continue;
-
-      const due = getDueSlotMinute({ now, timezone, times, windowMinutes: 1 });
-      if (!due) continue;
-
-      // Dedupe: only send once per user per local day per slot-minute
-      // Insert will fail with unique constraint if already sent.
-      try {
-        await db.insert(reminderSends).values({
-          userId: row.userId,
-          localDate: due.localDate,
-          minuteOfDay: due.minuteOfDay,
-        });
-      } catch {
-        // already sent
-        continue;
-      }
-
-      await sendExpoPush(row.expoPushToken, {
-        title: "Time for a check-in",
-        body: "A 30-second check-in helps spot patterns.",
-        data: {
-          kind: "check_in_reminder",
-        },
-      });
-
-      sentCount += 1;
-    }
-
-    return NextResponse.json({ success: true, sentCount });
+    const result = await runReminderNotifications();
+    return NextResponse.json({ success: true, ...result });
   } catch (e) {
     console.error("[cron/reminders] ERROR:", e);
     return NextResponse.json({ success: false }, { status: 500 });
   }
 });
 
-function isValidTime(t: ScheduleTime) {
-  return (
-    Number.isInteger(t.hour) &&
-    Number.isInteger(t.minute) &&
-    t.hour >= 0 &&
-    t.hour <= 23 &&
-    t.minute >= 0 &&
-    t.minute <= 59
-  );
+// Manual trigger — requires Authorization: Bearer <CRON_SECRET>
+// Set CRON_SECRET in your env file, then:
+//   curl -X GET https://<your-domain>/api/cron/reminders \
+//     -H "Authorization: Bearer <CRON_SECRET>"
+export async function GET(req: Request) {
+  const secret = process.env.CRON_SECRET;
+  if (!secret) {
+    return NextResponse.json(
+      { error: "CRON_SECRET env var not set" },
+      { status: 403 },
+    );
+  }
+
+  const auth = req.headers.get("authorization") ?? "";
+  if (auth !== `Bearer ${secret}`) {
+    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+  }
+
+  try {
+    const result = await runReminderNotifications();
+    return NextResponse.json({ success: true, ...result });
+  } catch (e) {
+    console.error("[cron/reminders] ERROR:", e);
+    return NextResponse.json({ success: false }, { status: 500 });
+  }
 }
 
-function minuteOfDay(t: ScheduleTime) {
-  return t.hour * 60 + t.minute;
+function minuteToTime(minute: number): string {
+  const h = Math.floor(minute / 60);
+  const m = minute % 60;
+  const period = h < 12 ? "AM" : "PM";
+  const displayHour = h % 12 === 0 ? 12 : h % 12;
+  return `${displayHour}:${String(m).padStart(2, "0")} ${period}`;
 }
 
 function getLocalParts(now: Date, timezone: string) {
-  // Produces stable local parts using IANA timezone
   const dtf = new Intl.DateTimeFormat("en-CA", {
     timeZone: timezone,
     year: "numeric",
@@ -151,37 +228,29 @@ function getLocalParts(now: Date, timezone: string) {
     throw new Error("Failed to compute local parts");
   }
 
-  const localDate = `${y}-${mo}-${d}`; // ISO date key in local tz
-  const localMinuteOfDay = Number(h) * 60 + Number(mi);
+  const localDate = `${y}-${mo}-${d}`;
+  // hour12: false can return "24" at midnight in some environments — clamp to 0
+  const localMinuteOfDay = (Number(h) % 24) * 60 + Number(mi);
 
   return { localDate, localMinuteOfDay };
 }
 
-/**
- * Returns the scheduled minute-of-day if "due now" (within window), else null.
- * Window is important because cron might drift a bit.
- */
 function getDueSlotMinute({
   now,
   timezone,
-  times,
+  slots,
   windowMinutes = 3,
 }: {
   now: Date;
   timezone: string;
-  times: ScheduleTime[];
+  slots: number[]; // minute-of-day values
   windowMinutes?: number;
 }): { localDate: string; minuteOfDay: number } | null {
   const { localDate, localMinuteOfDay } = getLocalParts(now, timezone);
 
-  const slots = times
-    .filter(isValidTime)
-    .map(minuteOfDay)
-    .sort((a, b) => a - b);
+  const sorted = [...slots].sort((a, b) => a - b);
 
-  for (const slot of slots) {
-    // Only send if we've reached the scheduled time,
-    // and we're still within a small grace window.
+  for (const slot of sorted) {
     if (localMinuteOfDay >= slot && localMinuteOfDay < slot + windowMinutes) {
       return { localDate, minuteOfDay: slot };
     }

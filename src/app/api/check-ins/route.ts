@@ -1,5 +1,5 @@
 import { db } from "@/db";
-import { checkInEntries } from "@/db/schema/checkInEntry";
+import { checkInEntries, SYMPTOM_VALUES } from "@/db/schema/checkInEntry";
 import { requireClerkUserId } from "@/lib/serverAuth";
 import { parseDateParam } from "@/utils/date/parseDateParam";
 import { getAppUserByClerkId } from "@/utils/getAppUserIdByClerkId";
@@ -10,11 +10,13 @@ import { allowlistAndSanitize } from "@/utils/validateRequestBody";
 import { and, desc, eq, gte, lt, lte } from "drizzle-orm";
 import { NextResponse } from "next/server";
 
+const DATE_RE = /^\d{4}-\d{2}-\d{2}$/;
+
 type CreateCheckInDTO = {
   energyLevel: number;
-  painLevel: number;
-  influencedBy?: string[];
-  note?: string;
+  symptoms?: string[];
+  notes?: string;
+  checkInDate?: string;
   createdAt?: string;
 };
 
@@ -73,17 +75,21 @@ export async function POST(req: Request) {
 
     const parsed = allowlistAndSanitize(body, {
       energyLevel: { kind: "number" },
-      painLevel: { kind: "number" },
-      influencedBy: {
+      symptoms: {
         kind: "array",
         optional: true,
         sanitizeItem: (v) => String(v).trim(),
-        maxLength: 20,
+        maxLength: SYMPTOM_VALUES.length,
       },
-      note: {
+      notes: {
         kind: "string",
         optional: true,
         sanitize: (input) => input.trim().slice(0, 2000),
+      },
+      checkInDate: {
+        kind: "string",
+        optional: true,
+        sanitize: (input) => input.trim(),
       },
       createdAt: {
         kind: "string",
@@ -94,21 +100,24 @@ export async function POST(req: Request) {
 
     if (!parsed.ok) return jsonError(400, parsed.message);
 
-    const { energyLevel, painLevel, influencedBy, note, createdAt } =
-      parsed.data;
+    const { energyLevel, notes, checkInDate, createdAt } = parsed.data;
+    const rawSymptoms = (parsed.data.symptoms ?? []) as unknown[];
 
-    if (!isIntegerInRange(energyLevel, 1, 10)) {
-      return jsonError(400, "energyLevel must be an integer between 1 and 10");
+    if (!isIntegerInRange(energyLevel, 1, 5)) {
+      return jsonError(400, "energyLevel must be an integer between 1 and 5");
     }
 
-    if (!isIntegerInRange(painLevel, 0, 10)) {
-      return jsonError(400, "painLevel must be an integer between 0 and 10");
+    const validSymptoms = rawSymptoms
+      .map((s) => String(s))
+      .filter((s) => (SYMPTOM_VALUES as readonly string[]).includes(s));
+
+    if (rawSymptoms.length > 0 && validSymptoms.length !== rawSymptoms.length) {
+      return jsonError(400, `symptoms must be one of: ${SYMPTOM_VALUES.join(", ")}`);
     }
 
-    const tags = (influencedBy ?? [])
-      .map((tag) => String(tag).trim())
-      .filter(Boolean)
-      .slice(0, 20);
+    if (checkInDate !== undefined && !DATE_RE.test(checkInDate)) {
+      return jsonError(400, "checkInDate must be in YYYY-MM-DD format");
+    }
 
     let createdAtDate: Date | undefined;
 
@@ -127,10 +136,7 @@ export async function POST(req: Request) {
       }
 
       if (createdAtDate < sevenDaysAgo) {
-        return jsonError(
-          400,
-          "Backfilled entries can only be up to 7 days old",
-        );
+        return jsonError(400, "Backfilled entries can only be up to 7 days old");
       }
     }
 
@@ -138,10 +144,10 @@ export async function POST(req: Request) {
       .insert(checkInEntries)
       .values({
         userId: user.id,
+        checkInDate: checkInDate ?? null,
         energyLevel,
-        painLevel,
-        influencedBy: tags,
-        note,
+        symptoms: validSymptoms,
+        notes,
         createdAt: createdAtDate ?? new Date(),
       })
       .returning();

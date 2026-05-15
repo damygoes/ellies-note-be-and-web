@@ -9,7 +9,10 @@ export const users = pgTable('users', {
   username: text('username').unique(),
   image: text('image'),
 
-  timezone: text('timezone'), // <-- ADD (IANA timezone)
+  timezone: text('timezone'),
+
+  subscriptionStatus: text('subscription_status').default('free').notNull(),
+  subscriptionExpiresAt: timestamp('subscription_expires_at'),
 
   createdAt: timestamp('created_at').defaultNow().notNull(),
   updatedAt: timestamp('updated_at').defaultNow().notNull(),

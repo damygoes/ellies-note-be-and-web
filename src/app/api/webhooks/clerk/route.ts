@@ -44,6 +44,7 @@ export async function POST(req: Request) {
     const email: string | undefined = data.email_addresses?.[0]?.email_address;
     const firstName: string | undefined = data.first_name ?? undefined;
     const lastName: string | undefined = data.last_name ?? undefined;
+    const username: string | undefined = data.username ?? undefined;
     const image: string | undefined = data.profile_image_url ?? undefined;
 
     await db
@@ -53,6 +54,7 @@ export async function POST(req: Request) {
         email,
         firstName,
         lastName,
+        username,
         image,
       })
       .onConflictDoNothing({ target: users.clerkUserId });

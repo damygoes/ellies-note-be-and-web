@@ -1,6 +1,2 @@
-import type { NotificationTime } from './types';
-
-export const DEFAULT_TWICE_DAILY: NotificationTime[] = [
-  { hour: 9, minute: 0 },
-  { hour: 18, minute: 0 },
-];
+export const DEFAULT_MORNING_MINUTE = 9 * 60; // 09:00 = 540
+export const DEFAULT_EVENING_MINUTE = 20 * 60; // 20:00 = 1200
