@@ -11,7 +11,7 @@ export function AppFooter() {
             <div className="flex items-center gap-3">
               <div className="relative grid h-10 w-10 place-items-center rounded-xl bg-card/70 ring-1 ring-border/60">
                 <Image
-                  src="/images/ellies-note-logo-light-mode.png"
+                  src="/images/logo.png"
                   alt="An owl with a pen and notepad representing the app"
                   fill
                   className="h-6 w-6 text-foreground"
