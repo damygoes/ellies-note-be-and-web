@@ -41,6 +41,7 @@ export async function GET(req: Request) {
       .select({
         dayKey: dayKeyExpr,
         energyLevel: checkInEntries.energyLevel,
+        symptoms: checkInEntries.symptoms,
       })
       .from(checkInEntries)
       .where(
@@ -67,6 +68,7 @@ export async function GET(req: Request) {
         dayKey: r.dayKey,
         dayIndex: dayIndexMap.get(r.dayKey)!,
         energyLevel: Number(r.energyLevel),
+        symptoms: r.symptoms ?? [],
       }));
 
     return NextResponse.json({

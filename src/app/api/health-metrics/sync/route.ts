@@ -38,8 +38,6 @@ export async function POST(req: Request) {
     const user = await getAppUserByClerkId(clerkUserId);
     if (!user) return jsonError(404, "User not found");
 
-    if (user.subscriptionStatus !== "premium") return jsonError(403, "Premium required");
-
     const body = await req.json();
     const raw: unknown[] = Array.isArray(body?.snapshots) ? body.snapshots : [];
     const valid = raw.filter(isValidItem);
