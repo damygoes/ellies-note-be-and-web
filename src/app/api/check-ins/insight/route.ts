@@ -62,7 +62,11 @@ export async function GET(req: Request) {
     const user = await getAppUserByClerkId(clerkUserId);
     if (!user) return jsonError(404, "User not found");
 
-    if (user.subscriptionStatus !== "premium") {
+    const now = new Date();
+    const isPremium =
+      user.subscriptionStatus === "premium" ||
+      (user.subscriptionExpiresAt !== null && user.subscriptionExpiresAt > now);
+    if (!isPremium) {
       return NextResponse.json({
         success: true,
         data: { insights: [], message: null },
