@@ -23,10 +23,12 @@ export async function GET(req: Request) {
     );
 
     const rangeDaysRaw = parseIntParam(url.searchParams.get("range"), 7);
-    const maxRange = user.subscriptionStatus === "premium" ? 365 : 7;
-    const rangeDays = Math.min(maxRange, Math.max(1, rangeDaysRaw));
-
     const now = new Date();
+    const isPremium =
+      user.subscriptionStatus === "premium" ||
+      (user.subscriptionExpiresAt !== null && user.subscriptionExpiresAt > now);
+    const maxRange = isPremium ? 365 : 7;
+    const rangeDays = Math.min(maxRange, Math.max(1, rangeDaysRaw));
     const endUtc = addDaysUtc(startOfLocalDay(now, tzOffsetMinutes), 1);
     const startUtc = addDaysUtc(endUtc, -rangeDays);
 
