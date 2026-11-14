@@ -1,36 +1,58 @@
-This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://nextjs.org/docs/app/api-reference/cli/create-next-app).
+# ElliesNote: backend & website
 
-## Getting Started
+This repo holds the API behind the ElliesNote iOS app and the public website (landing page, privacy policy, terms, support). ElliesNote is a quick daily check-in app for people living with CFS/ME, fibromyalgia and similar conditions. You log energy, symptoms, sleep and crash days, and the app helps you spot patterns over time.
 
-First, run the development server:
+The mobile app lives in a separate repo.
+
+## Stack
+
+- Next.js 16 (App Router) on Vercel
+- Postgres on Neon, with Drizzle ORM
+- Clerk for auth
+- Upstash QStash for scheduled reminder jobs, sent as Expo push notifications
+- RevenueCat for subscriptions (webhook only)
+- Sentry for error tracking
+
+## Running locally
 
 ```bash
-npm run dev
-# or
-yarn dev
-# or
+pnpm install
 pnpm dev
-# or
-bun dev
 ```
 
-Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
+The app reads its env from `.env.local` (or `.env.development.local`) and validates it on startup, so it will fail fast if something is missing. You'll need:
 
-You can start editing the page by modifying `app/page.tsx`. The page auto-updates as you edit the file.
+```
+DATABASE_URL, DATABASE_HOST, DATABASE_PORT, DATABASE_NAME,
+DATABASE_USERNAME, DATABASE_PASSWORD
+CLERK_SECRET_KEY, CLERK_WEBHOOK_SECRET, NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY
+QSTASH_URL, QSTASH_TOKEN, QSTASH_CURRENT_SIGNING_KEY, QSTASH_NEXT_SIGNING_KEY
+REVENUECAT_WEBHOOK_SECRET
+NEXT_PUBLIC_SENTRY_DSN
+```
 
-This project uses [`next/font`](https://nextjs.org/docs/app/building-your-application/optimizing/fonts) to automatically optimize and load [Geist](https://vercel.com/font), a new font family for Vercel.
+The full list and its validation are in `src/lib/env.server.ts` and `src/lib/env.client.ts`.
 
-## Learn More
+## Database
 
-To learn more about Next.js, take a look at the following resources:
+Schemas are in `src/db/schema/`, and generated migrations go in `src/db/drizzle/`.
 
-- [Next.js Documentation](https://nextjs.org/docs) - learn about Next.js features and API.
-- [Learn Next.js](https://nextjs.org/learn) - an interactive Next.js tutorial.
+```bash
+pnpm db:generate      # create a migration from schema changes
+pnpm db:migrate       # apply migrations (uses your local env)
+pnpm db:migrate-prod  # apply migrations against production
+```
 
-You can check out [the Next.js GitHub repository](https://github.com/vercel/next.js) - your feedback and contributions are welcome!
+drizzle-kit needs a direct connection, so if `DATABASE_URL_UNPOOLED` is set it's used instead of the pooled Neon URL.
 
-## Deploy on Vercel
+## Project layout
 
-The easiest way to deploy your Next.js app is to use the [Vercel Platform](https://vercel.com/new?utm_medium=default-template&filter=next.js&utm_source=create-next-app&utm_campaign=create-next-app-readme) from the creators of Next.js.
+```
+src/app/api/     API routes (check-ins, crash days, health metrics, integrations, webhooks, cron)
+src/app/         website pages
+src/db/          Drizzle client, schemas and migrations
+src/features/    domain types and helpers
+src/utils/       small shared helpers (dates, request parsing, errors)
+```
 
-Check out our [Next.js deployment documentation](https://nextjs.org/docs/app/building-your-application/deploying) for more details.
+`GET /api/health` returns the current environment and DB host. It's handy for checking a deployment is pointing at the right database.
